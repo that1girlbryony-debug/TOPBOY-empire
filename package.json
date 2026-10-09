@@ -1,12 +1,13 @@
 {
   "name": "topboy-nation-bot",
-  "version": "2.0.0",
-  "description": "WhatsApp Economy Bot - TopBoy Nation Edition",
+  "version": "3.0.0",
+  "description": "WhatsApp Economy Bot - TopBoy Empire Edition (v3.0.0 architecture refactor)",
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "syntax-check": "find . -path ./node_modules -prune -o -name '*.js' -print | xargs -n1 node -c"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "latest",
