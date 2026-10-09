@@ -20,12 +20,13 @@ module.exports = {
     // Global Cooldowns (in milliseconds)
     cooldowns: {
         beg: 120000,          // 2 minutes
-        rob: 400000,          // 15 minutes (as set in new economy.js)
-        daily: 86400000,      // 24 hours
-        
+        rob: 400000,          // 6 minutes 40 seconds
+        work: 1200000,        // 20 minutes — 🛠 E2: was missing entirely, making .work an infinite money printer
+        daily: 86400000,      // 24 hours (note: .daily currently uses lastDailyClaim instead of handleCooldown — see refactor Phase 2)
+
         // Game Cooldowns
         cf: 60000,            // 1 minute
-        bet: 60000,           // 1 minute
+        bet: 60000,           // 1 minute (DEAD ENTRY — no .bet command exists; removed in Phase 2)
         slots: 60000,         // 1 minute
         casino: 120000,       // 2 minutes
         roulette: 60000       // 1 minute

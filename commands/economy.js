@@ -1956,7 +1956,7 @@ const shopItems = [
   { id: 18, name: "🏗 Construction Empire", price: 65000000, income: 4200000 },
   { id: 19, name: "🏰 Castle Estate", price: 100000000, income: 7000000 },
   { id: 20, name: "🌍 Global Conglomerate", price: 250000000, income: 20000000 },
-  { id: 21, name: "🧑🏿‍🦲 SLAVES(nigga)", price: 500000000, income: 50000000 },
+  { id: 21, name: "🏭 Megacorp Labor Force", price: 500000000, income: 50000000 },
   { id: 22, name: "📈 S&P 500", price: 1000000000, income: 100000000 },
   { id: 23, name: "#️⃣ BITCOIN MINER", price: 2500000000, income: 250000000 },
   { id: 24, name: "📉 Tesla stock", price: 5000000000, income: 500000000 },
@@ -2629,8 +2629,8 @@ first to type it wins free cash, no bet needed.
 ▬▬▬▬▬▬▬▬▬▬▬▬
 💍 MARRY SYSTEM
 
-.marry @user — costs $50k
-.divorce — costs $100k
+.marry @user — costs $${formatMoney(MARRIAGE_FEE)}
+.divorce — costs $${formatMoney(50000000)}
 .spouse — check status
 
 ▬▬▬▬▬▬▬▬▬▬▬▬
