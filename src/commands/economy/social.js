@@ -40,16 +40,17 @@ const {
 const SOCIAL_COMMANDS = new Set([
   "marry", "divorce", "spouse",
   "marriageaccept", "marriagereject",
-  "slap", "kill", "yeet", "fuck", "kiss"
+  "slap", "kill", "yeet", "fuck", "wild", "kiss"
 ]);
 
-const REACTION_COMMANDS = ["slap", "kill", "yeet", "fuck", "kiss"];
+const REACTION_COMMANDS = ["slap", "kill", "yeet", "fuck", "wild", "kiss"];
 
 const REACTION_CAPTIONS = {
   slap: (s, t) => `👋 @${s} slapped @${t}!`,
   kill: (s, t) => `💀 @${s} eliminated @${t}!`,
   yeet: (s, t) => `🚀 @${s} yeeted @${t}!`,
-  fuck: (s, t) => `🔥 @${s} is wildin' with @${t}!`,
+  fuck: (s, t) => `🔥 @${s} is wildin' with @${t}!`,  // kept for backward compat
+  wild: (s, t) => `🔥 @${s} is wildin' with @${t}!`,
   kiss: (s, t) => `💋 @${s} kissed @${t}!`,
 };
 
@@ -69,23 +70,28 @@ const PROPOSAL_MESSAGES = [
 async function handle(ctx) {
   const { command, args, user, sender, reply, sock, chat, msg, isGroup } = ctx;
 
-  // ── Reaction commands (.slap/.kill/.yeet/.fuck/.kiss) ───────
+  // ── Reaction commands (.slap/.kill/.yeet/.fuck/.wild/.kiss) ──
   if (REACTION_COMMANDS.includes(command)) {
     if (!isGroup)
       return reply("🚫 This command works in groups only.");
 
-    const target = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+    // 🛠 FIX (Phase 3 / 3.2): accept replied-to user, not just mention
+    const target =
+      msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0] ||
+      msg.message?.extendedTextMessage?.contextInfo?.participant;
 
     if (!target)
-      return reply(`Usage: .${command} @user`);
+      return reply(`Usage: .${command} @user (or reply to their message)`);
 
     if (target === sender)
       return reply("🚫 You can't use this on yourself.");
 
-    if (!gifs[command] || gifs[command].length === 0)
+    // 🛠 FIX (Phase 3 / 3.7): .wild maps to the "fuck" gif key for backward compat
+    const gifKey = command === "wild" ? "fuck" : command;
+    if (!gifs[gifKey] || gifs[gifKey].length === 0)
       return reply("⚠️ No GIFs available for this action.");
 
-    const randomGif = gifs[command][Math.floor(Math.random() * gifs[command].length)];
+    const randomGif = gifs[gifKey][Math.floor(Math.random() * gifs[gifKey].length)];
 
     const senderName = sender.split("@")[0];
     const targetName = target.split("@")[0];

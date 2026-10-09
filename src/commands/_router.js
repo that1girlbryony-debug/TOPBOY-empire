@@ -86,7 +86,7 @@ const ECONOMY_COMMANDS = new Set([
   "daily", "beg", "auction", "bid", "wd", "dep", "give", "loan", "payloan",
   "rob", "send", "casino", "slots", "cf", "roulette",
   "shop", "dice", "items", "heist", "join", "protect", "claim", "col", "view",
-  "burn", "test", "tools", "accept", "reject", "kiss", "slap", "fuck", "yeet",
+  "burn", "test", "tools", "accept", "reject", "kiss", "slap", "fuck", "wild", "yeet",
   "kill", "yes", "no", "roll", "buy", "sell", "bail",
   "marry", "divorce", "spouse", "marriageaccept", "marriagereject", "work",
   "trade", "fuse", "tradeaccept", "tradereject",

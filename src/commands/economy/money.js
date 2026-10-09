@@ -156,6 +156,10 @@ async function handle(ctx) {
       receiver.collection = receiver.collection || [];
       receiver.collection.push(item);
 
+      // 🛠 FIX (Phase 3 / 3.3): .give now rewards XP (matches .burn/.trade/.fuse)
+      const rewardXP = createRewardXP({ user, command: "give" });
+      await rewardXP();
+
       await user.save();
       await receiver.save();
 
