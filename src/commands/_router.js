@@ -14,7 +14,7 @@
  * their proper module. When all commands are migrated, the legacy
  * file is deleted.
  *
- * Current migration status (Phase 2.5 batch 3):
+ * Current migration status (Phase 2.5 batch 4):
  *   ✅ Migrated to src/commands/economy/progression.js:
  *      .cd, .daily, .work, .beg, .lb, .richest, .profile
  *   ✅ Migrated to src/commands/economy/money.js:
@@ -28,11 +28,13 @@
  *      .slap, .kill, .yeet, .fuck, .kiss
  *   ✅ Migrated to src/commands/economy/businesses.js:
  *      .shop, .buy, .sell, .assets, .items, .tools
+ *   ✅ Migrated to src/commands/economy/info.js:
+ *      .menu, .help, .about, .test, .debug, .afk
  *   ⬜ Legacy (still in _economyLegacy.js):
- *      .menu, .help, .about, .test, .debug, .afk, .loan, .payloan, .rob,
- *      .dice, .heist, .join, .protect, .claim, .auction, .bid, .trade,
- *      .fuse, .tradeaccept, .tradereject, .ttt, .move, .rps, .throw,
- *      .race, .dogbet, .pnt, .pntjoin, .accept, .reject, .yes, .no, .roll
+ *      .loan, .payloan, .rob, .bail, .dice, .heist, .join, .protect,
+ *      .claim, .auction, .bid, .trade, .fuse, .tradeaccept, .tradereject,
+ *      .ttt, .move, .rps, .throw, .race, .dogbet, .pnt, .pntjoin,
+ *      .accept, .reject, .yes, .no, .roll
  *
  * This file's ONLY job is to dispatch — it doesn't implement any
  * command logic itself.
@@ -65,6 +67,7 @@ const gamble = require("./economy/gamble");
 const cards = require("./economy/cards");
 const social = require("./economy/social");
 const businesses = require("./economy/businesses");
+const info = require("./economy/info");
 
 const MIGRATED_COMMANDS = new Map(); // command → handler module
 for (const cmd of progression.PROGRESSION_COMMANDS) MIGRATED_COMMANDS.set(cmd, progression);
@@ -73,6 +76,7 @@ for (const cmd of gamble.GAMBLE_COMMANDS) MIGRATED_COMMANDS.set(cmd, gamble);
 for (const cmd of cards.CARDS_COMMANDS) MIGRATED_COMMANDS.set(cmd, cards);
 for (const cmd of social.SOCIAL_COMMANDS) MIGRATED_COMMANDS.set(cmd, social);
 for (const cmd of businesses.BUSINESS_COMMANDS) MIGRATED_COMMANDS.set(cmd, businesses);
+for (const cmd of info.INFO_COMMANDS) MIGRATED_COMMANDS.set(cmd, info);
 
 // ── Economy commands list (all commands — for the outer gate) ──
 const ECONOMY_COMMANDS = new Set([
