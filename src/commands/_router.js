@@ -14,7 +14,7 @@
  * their proper module. When all commands are migrated, the legacy
  * file is deleted.
  *
- * Current migration status (Phase 2.5 batch 4):
+ * Current migration status (Phase 2.5 batch 5):
  *   ✅ Migrated to src/commands/economy/progression.js:
  *      .cd, .daily, .work, .beg, .lb, .richest, .profile
  *   ✅ Migrated to src/commands/economy/money.js:
@@ -30,9 +30,10 @@
  *      .shop, .buy, .sell, .assets, .items, .tools
  *   ✅ Migrated to src/commands/economy/info.js:
  *      .menu, .help, .about, .test, .debug, .afk
+ *   ✅ Migrated to src/commands/economy/transactions.js:
+ *      .loan, .payloan, .bail, .trade, .tradeaccept, .tradereject, .fuse, .rob
  *   ⬜ Legacy (still in _economyLegacy.js):
- *      .loan, .payloan, .rob, .bail, .dice, .heist, .join, .protect,
- *      .claim, .auction, .bid, .trade, .fuse, .tradeaccept, .tradereject,
+ *      .dice, .heist, .join, .protect, .claim, .auction, .bid,
  *      .ttt, .move, .rps, .throw, .race, .dogbet, .pnt, .pntjoin,
  *      .accept, .reject, .yes, .no, .roll
  *
@@ -68,6 +69,7 @@ const cards = require("./economy/cards");
 const social = require("./economy/social");
 const businesses = require("./economy/businesses");
 const info = require("./economy/info");
+const transactions = require("./economy/transactions");
 
 const MIGRATED_COMMANDS = new Map(); // command → handler module
 for (const cmd of progression.PROGRESSION_COMMANDS) MIGRATED_COMMANDS.set(cmd, progression);
@@ -77,6 +79,7 @@ for (const cmd of cards.CARDS_COMMANDS) MIGRATED_COMMANDS.set(cmd, cards);
 for (const cmd of social.SOCIAL_COMMANDS) MIGRATED_COMMANDS.set(cmd, social);
 for (const cmd of businesses.BUSINESS_COMMANDS) MIGRATED_COMMANDS.set(cmd, businesses);
 for (const cmd of info.INFO_COMMANDS) MIGRATED_COMMANDS.set(cmd, info);
+for (const cmd of transactions.TRANSACTION_COMMANDS) MIGRATED_COMMANDS.set(cmd, transactions);
 
 // ── Economy commands list (all commands — for the outer gate) ──
 const ECONOMY_COMMANDS = new Set([

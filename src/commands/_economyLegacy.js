@@ -2515,7 +2515,8 @@ module.exports = async (context) => {
     "marry", "divorce", "spouse", "marriageaccept", "marriagereject",
     "slap", "kill", "yeet", "fuck", "kiss",
     "shop", "buy", "sell", "assets", "items", "tools",
-    "menu", "help", "about", "test", "debug", "afk"
+    "menu", "help", "about", "test", "debug", "afk",
+    "loan", "payloan", "bail", "trade", "tradeaccept", "tradereject", "fuse", "rob"
   ]);
   if (MIGRATED.has(command)) {
     console.warn(`⚠️ [Legacy] Command ".${command}" reached legacy handler — it should have been intercepted by the router. Check _router.js MIGRATED_COMMANDS.`);
