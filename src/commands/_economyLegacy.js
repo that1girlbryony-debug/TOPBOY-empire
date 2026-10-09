@@ -2509,7 +2509,9 @@ module.exports = async (context) => {
   // rather than running the old (now-duplicate) code.
   const MIGRATED = new Set([
     "cd", "daily", "work", "beg", "lb", "richest", "profile",
-    "bal", "dep", "wd", "give", "send"
+    "bal", "dep", "wd", "give", "send",
+    "casino", "slots", "cf", "roulette",
+    "col", "view", "burn"
   ]);
   if (MIGRATED.has(command)) {
     console.warn(`⚠️ [Legacy] Command ".${command}" reached legacy handler — it should have been intercepted by the router. Check _router.js MIGRATED_COMMANDS.`);
@@ -6193,3 +6195,5 @@ module.exports.MAX_TOTAL_ASSETS = MAX_TOTAL_ASSETS;
 module.exports.canFireInGroup = canFireInGroup;
 module.exports.canDropInGroup = canDropInGroup;
 module.exports.checkGifSetup = checkGifSetup;
+// 🛠 Phase 2.5 batch 2: export shareGamblingWin for gamble.js migration
+module.exports.shareGamblingWin = shareGamblingWin;

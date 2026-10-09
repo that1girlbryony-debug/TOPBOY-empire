@@ -14,20 +14,23 @@
  * their proper module. When all commands are migrated, the legacy
  * file is deleted.
  *
- * Current migration status (Phase 2.5):
+ * Current migration status (Phase 2.5 batch 2):
  *   ✅ Migrated to src/commands/economy/progression.js:
  *      .cd, .daily, .work, .beg, .lb, .richest, .profile
  *   ✅ Migrated to src/commands/economy/money.js:
  *      .bal, .dep, .wd, .give, .send
+ *   ✅ Migrated to src/commands/economy/gamble.js:
+ *      .casino, .slots, .cf, .roulette
+ *   ✅ Migrated to src/commands/economy/cards.js:
+ *      .col, .view, .burn
  *   ⬜ Legacy (still in _economyLegacy.js):
  *      .menu, .help, .about, .assets, .auction, .bid, .loan, .payloan,
- *      .rob, .casino, .slots, .cf, .roulette, .shop, .dice, .items,
- *      .heist, .join, .protect, .claim, .col, .view, .burn, .test,
- *      .tools, .accept, .reject, .kiss, .slap, .fuck, .yeet, .kill,
- *      .yes, .no, .roll, .buy, .sell, .bail, .marry, .divorce, .spouse,
- *      .marriageaccept, .marriagereject, .trade, .fuse, .tradeaccept,
- *      .tradereject, .debug, .ttt, .move, .rps, .throw, .race, .dogbet,
- *      .pnt, .pntjoin, .afk
+ *      .rob, .dice, .items, .heist, .join, .protect, .claim, .view,
+ *      .test, .tools, .accept, .reject, .kiss, .slap, .fuck, .yeet,
+ *      .kill, .yes, .no, .roll, .buy, .sell, .bail, .marry, .divorce,
+ *      .spouse, .marriageaccept, .marriagereject, .trade, .fuse,
+ *      .tradeaccept, .tradereject, .debug, .ttt, .move, .rps, .throw,
+ *      .race, .dogbet, .pnt, .pntjoin, .afk
  *
  * This file's ONLY job is to dispatch — it doesn't implement any
  * command logic itself.
@@ -56,10 +59,14 @@ const ADMIN_COMMANDS = new Set([
 // file never sees it.
 const progression = require("./economy/progression");
 const money = require("./economy/money");
+const gamble = require("./economy/gamble");
+const cards = require("./economy/cards");
 
 const MIGRATED_COMMANDS = new Map(); // command → handler module
 for (const cmd of progression.PROGRESSION_COMMANDS) MIGRATED_COMMANDS.set(cmd, progression);
 for (const cmd of money.MONEY_COMMANDS) MIGRATED_COMMANDS.set(cmd, money);
+for (const cmd of gamble.GAMBLE_COMMANDS) MIGRATED_COMMANDS.set(cmd, gamble);
+for (const cmd of cards.CARDS_COMMANDS) MIGRATED_COMMANDS.set(cmd, cards);
 
 // ── Economy commands list (all commands — for the outer gate) ──
 const ECONOMY_COMMANDS = new Set([
