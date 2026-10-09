@@ -2500,6 +2500,22 @@ const xpRewards = {
 module.exports = async (context) => {
   const { command, args, user, sender, reply, sock, chat, msg } = context;
   const isGroup = chat.endsWith("@g.us");
+
+  // 🛠 Phase 2.5: MIGRATED COMMANDS GUARD
+  // These commands have been moved to proper domain modules under
+  // src/commands/economy/. The router intercepts them BEFORE calling
+  // this legacy handler, so they should never reach here. This guard
+  // is a safety net — if somehow they do reach here, return immediately
+  // rather than running the old (now-duplicate) code.
+  const MIGRATED = new Set([
+    "cd", "daily", "work", "beg", "lb", "richest", "profile",
+    "bal", "dep", "wd", "give", "send"
+  ]);
+  if (MIGRATED.has(command)) {
+    console.warn(`⚠️ [Legacy] Command ".${command}" reached legacy handler — it should have been intercepted by the router. Check _router.js MIGRATED_COMMANDS.`);
+    return;
+  }
+
 let xpGiven = false;
 
 async function rewardXP() {
@@ -6147,4 +6163,33 @@ module.exports.checkQuickDraw = checkQuickDraw;
 // arrive as private DMs — index.js routes them here.
 module.exports.handleDMAction = handleDMAction;
 // 🆕 GIF/ffmpeg diagnostics for admin.js's .gifcheck command
+// 🛠 Phase 2.5: export module-level helpers so newly-migrated command
+// modules can import them via src/commands/economy/_shared.js without
+// duplicating the code. When all commands are migrated, these will move
+// into src/lib/ proper.
+module.exports.ensureCooldownMap = ensureCooldownMap;
+module.exports.getRemaining = getRemaining;
+module.exports.handleCooldown = handleCooldown;
+module.exports.formatTime = formatTime;
+module.exports.getNigeriaDate = getNigeriaDate;
+module.exports.checkGambleLimit = checkGambleLimit;
+module.exports.header = header;
+module.exports.footer = footer;
+module.exports.divider = divider;
+module.exports.successBox = successBox;
+module.exports.errorBox = errorBox;
+module.exports.infoBox = infoBox;
+module.exports.xpForNextLevel = xpForNextLevel;
+module.exports.addXP = addXP;
+module.exports.createXPBar = createXPBar;
+module.exports.getTitle = getTitle;
+module.exports.calculateTax = calculateTax;
+module.exports.xpRewards = xpRewards;
+module.exports.shopItems = shopItems;
+module.exports.powerItems = powerItems;
+module.exports.dropItems = dropItems;
+module.exports.MAX_COPIES_PER_ASSET = MAX_COPIES_PER_ASSET;
+module.exports.MAX_TOTAL_ASSETS = MAX_TOTAL_ASSETS;
+module.exports.canFireInGroup = canFireInGroup;
+module.exports.canDropInGroup = canDropInGroup;
 module.exports.checkGifSetup = checkGifSetup;
