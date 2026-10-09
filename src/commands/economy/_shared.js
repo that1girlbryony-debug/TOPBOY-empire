@@ -92,6 +92,13 @@ module.exports = {
   // ── Gambling helper ────────────────────────────────────────
   shareGamblingWin: legacy.shareGamblingWin,
 
+  // ── Marriage ───────────────────────────────────────────────
+  MARRIAGE_FEE: legacy.MARRIAGE_FEE,
+  DIVORCE_FEE: 50_000_000, // $50M — both spouses pay (Phase 1 fix)
+
+  // ── GIF conversion ─────────────────────────────────────────
+  getGifAsMp4: legacy.getGifAsMp4,
+
   // ── Reward XP factory ──────────────────────────────────────
   createRewardXP,
 };

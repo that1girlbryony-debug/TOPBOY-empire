@@ -2511,7 +2511,10 @@ module.exports = async (context) => {
     "cd", "daily", "work", "beg", "lb", "richest", "profile",
     "bal", "dep", "wd", "give", "send",
     "casino", "slots", "cf", "roulette",
-    "col", "view", "burn"
+    "col", "view", "burn",
+    "marry", "divorce", "spouse", "marriageaccept", "marriagereject",
+    "slap", "kill", "yeet", "fuck", "kiss",
+    "shop", "buy", "sell", "assets", "items", "tools"
   ]);
   if (MIGRATED.has(command)) {
     console.warn(`⚠️ [Legacy] Command ".${command}" reached legacy handler — it should have been intercepted by the router. Check _router.js MIGRATED_COMMANDS.`);
@@ -6197,3 +6200,6 @@ module.exports.canDropInGroup = canDropInGroup;
 module.exports.checkGifSetup = checkGifSetup;
 // 🛠 Phase 2.5 batch 2: export shareGamblingWin for gamble.js migration
 module.exports.shareGamblingWin = shareGamblingWin;
+// 🛠 Phase 2.5 batch 3: export MARRIAGE_FEE + getGifAsMp4 for social.js migration
+module.exports.MARRIAGE_FEE = MARRIAGE_FEE;
+module.exports.getGifAsMp4 = getGifAsMp4;
