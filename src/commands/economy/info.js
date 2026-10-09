@@ -55,15 +55,15 @@ const menuCategories = {
   },
   warzone: {
     label: "💣 WAR ZONE",
-    body: ".rob @user\n.heist @user — team robbery\n.join / .protect — pick a side\n.bail @user — spouse only"
+    body: ".rob @user\n.items — buy shields/guns\n.tools — view your arsenal\n.heist @user — team robbery\n.join / .protect — pick a side\n.bail @user — spouse only"
   },
   social: {
     label: "💍 SOCIAL",
-    body: ".marry @user / .divorce\n.spouse — relationship status\n.slap .kill .yeet .kiss .fuck"
+    body: ".marry @user / .divorce\n.spouse — relationship status\n.slap .kill .yeet .kiss .wild"
   },
   other: {
     label: "❓ OTHER",
-    body: ".profile — your card\n.qa — trivia\n.cd — cooldowns\n.lb — leaderboard\n.afk <reason> — go AFK\n.about — full manual"
+    body: ".profile — your card\n.qa — trivia\n.cd — cooldowns\n.lb — leaderboard\n.race — start a dog race\n.afk <reason> — go AFK\n.about — full manual"
   }
 };
 
@@ -138,8 +138,10 @@ events, Quick Draw — type
 
 ✨ WHAT'S NEW IN 2.0 ✨
 • 💻 Hacker events — the richest
-  player can get targeted, type
-  .defend to help stop it
+  player gets targeted. 5% lucky
+  escape, otherwise lose half
+  businesses. Being #1 makes
+  you the target.
 • ❌⭕ X and O — wager a friend
   with .ttt @user <bet>
 • ⚡ Quick Draw — free reaction
@@ -263,8 +265,8 @@ first to type it wins free cash, no bet needed.
 ▬▬▬▬▬▬▬▬▬▬▬▬
 ❓ Q&A
 
-.qa question — ask the group
-.qa — see and answer questions
+.qa — admin triggers a trivia quiz
+.quiz <count> — multi-question trivia
 
 ▬▬▬▬▬▬▬▬▬▬▬▬
 ⚔ FUN COMMANDS

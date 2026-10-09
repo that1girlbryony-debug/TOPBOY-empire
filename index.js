@@ -1066,7 +1066,7 @@ Join my official group to use the bot:
                     }
                     await User.create({ userId: sender });
                     return reply(
-                        "🔥 REGISTRATION COMPLETE\nYou received $2,000 starter cash.\n\n📘 Type *.about* to see what's new in 2.0!"
+                        "🔥 REGISTRATION COMPLETE\nYou received $2,000 starter cash.\n\n📝 Here's how to start:\n1. *.daily* — claim $5k+\n2. *.shop* — buy your first business\n3. *.work* — quick cash\n\nType *.menu* for everything else."
                     );
                 }
 
@@ -1129,7 +1129,7 @@ Join my official group to use the bot:
                     "profile", "bal", "assets", "lb", "richest", "cd",
                     "daily", "beg", "auction", "bid", "wd", "dep", "give", "loan", "payloan",
                     "rob", "send", "casino", "slots", "cf", "roulette",
-                    "shop", "dice", "items", "heist", "join", "protect", "claim", "col", "view", "burn", "test", "tools", "accept", "reject", "kiss", "slap", "fuck", "yeet", "kill", "yes", "no",
+                    "shop", "dice", "items", "heist", "join", "protect", "claim", "col", "view", "burn", "test", "tools", "accept", "reject", "kiss", "slap", "fuck", "wild", "yeet", "kill", "yes", "no",
                     "roll", "buy", "sell", "bail",
                     "marry", "divorce", "spouse", "marriageaccept", "marriagereject", "work", "trade", "fuse", "tradeaccept", "tradereject",
                     "debug",

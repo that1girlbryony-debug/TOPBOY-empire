@@ -490,7 +490,7 @@ ${duration ? `⏳ Duration: ${durationInput}` : "⚠️ PERMANENT"}
                         mentions: [session.target]
                     });
                 }
-            }, 30000);
+            }, 60000); // 🛠 FIX (Phase 3 / 3.5): was 30000 but announcement says 60s
 
             return reply(
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
@@ -591,9 +591,11 @@ Started by: @${cleanId(sender)}
         case "reset": {
             if (!isBotOwner) return reply("🚫 Owner only.");
 
+            // 🛠 FIX (Phase 3 / 3.5): was $200,000 but .register gives $2,000.
+            // 100× gap distorted the leaderboard post-reset. Now matches.
             await User.updateMany({}, {
                 $set: {
-                    wallet: 200000,
+                    wallet: 2000,
                     bank: 0,
                     debt: 0,
                     assets: [],
@@ -605,7 +607,7 @@ Started by: @${cleanId(sender)}
                 }
             });
 
-            return reply("💥 ECONOMY RESET COMPLETE.\nEveryone now has $200,000.");
+            return reply("💥 ECONOMY RESET COMPLETE.\nEveryone now has $2,000 (matches .register).");
         }
 
         // ===============================

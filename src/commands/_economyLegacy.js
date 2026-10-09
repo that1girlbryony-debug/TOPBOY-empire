@@ -747,7 +747,7 @@ async function startDogRace(sock, chat, sender, reply) {
 // since it's a system event, not something a user triggered.
 async function autoStartDogRace(sock, chat) {
   if (global._activeRaces.has(chat)) return false;
-  return beginRaceSession(sock, chat, "🤖 Automatic race — one runs roughly every 10 minutes!");
+  return beginRaceSession(sock, chat, "🤖 Automatic race — one runs roughly every 2 hours!"); // 🛠 FIX (Phase 3 / 3.5): was "10 minutes" but AUTO_RACE_INTERVAL is 2h
 }
 
 async function placeDogBet(sender, chat, dogArg, amountArg, reply) {
@@ -2475,6 +2475,7 @@ const xpRewards = {
   daily: 40,
   beg: 10,
   send: 15,
+  give: 15, // 🛠 Phase 3 / 3.3: added — was missing, so .give gave no XP
   buy: 40,
   sell: 20,
   dep: 10,
@@ -6118,7 +6119,7 @@ if (command === "spouse") {
 
 } catch (err) {
     console.error(err);
-    reply("⚠️ Empire system error.");
+    reply("❓ Unknown command. Type *.menu* for the command list.");
   }
 };
 
