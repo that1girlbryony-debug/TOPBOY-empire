@@ -2516,7 +2516,10 @@ module.exports = async (context) => {
     "slap", "kill", "yeet", "fuck", "kiss",
     "shop", "buy", "sell", "assets", "items", "tools",
     "menu", "help", "about", "test", "debug", "afk",
-    "loan", "payloan", "bail", "trade", "tradeaccept", "tradereject", "fuse", "rob"
+    "loan", "payloan", "bail", "trade", "tradeaccept", "tradereject", "fuse", "rob",
+    "ttt", "move", "rps", "throw", "race", "dogbet", "pnt", "pntjoin",
+    "dice", "accept", "reject", "roll", "yes", "no",
+    "heist", "join", "protect", "claim", "auction", "bid"
   ]);
   if (MIGRATED.has(command)) {
     console.warn(`⚠️ [Legacy] Command ".${command}" reached legacy handler — it should have been intercepted by the router. Check _router.js MIGRATED_COMMANDS.`);
@@ -6205,3 +6208,35 @@ module.exports.shareGamblingWin = shareGamblingWin;
 // 🛠 Phase 2.5 batch 3: export MARRIAGE_FEE + getGifAsMp4 for social.js migration
 module.exports.MARRIAGE_FEE = MARRIAGE_FEE;
 module.exports.getGifAsMp4 = getGifAsMp4;
+
+// 🛠 Phase 2.5 final batch: export game-engine functions for games.js + events.js
+// TTT
+module.exports.tttStartChallenge = tttStartChallenge;
+module.exports.tttAccept = tttAccept;
+module.exports.tttReject = tttReject;
+module.exports.tttMove = tttMove;
+// RPS
+module.exports.rpsStartChallenge = rpsStartChallenge;
+module.exports.rpsAccept = rpsAccept;
+module.exports.rpsReject = rpsReject;
+// PNT
+module.exports.startPNTLobby = startPNTLobby;
+module.exports.joinPNTLobby = joinPNTLobby;
+module.exports.finalizePNTLobby = finalizePNTLobby;
+module.exports.PNT_LOBBY_WINDOW = PNT_LOBBY_WINDOW;
+// Dog race
+module.exports.startDogRace = startDogRace;
+module.exports.placeDogBet = placeDogBet;
+// Dice
+module.exports.scheduleDiceMoveTimeout = scheduleDiceMoveTimeout;
+module.exports.DICE_MOVE_TIMEOUT = DICE_MOVE_TIMEOUT;
+// Heist
+module.exports.takeTotalPercent = takeTotalPercent;
+// Shared maps
+module.exports.activeDiceGames = activeDiceGames;
+module.exports.activeAuctions = activeAuctions;
+module.exports.activeHeists = activeHeists;
+module.exports.activeDrops = activeDrops;
+module.exports.heistCooldowns = heistCooldowns;
+module.exports.HEIST_COOLDOWN = HEIST_COOLDOWN;
+module.exports.HEIST_DURATION = HEIST_DURATION;
