@@ -979,13 +979,20 @@ Join my official group to use the bot:
                 let user = await User.findOne({ userId: sender });
 
                 // ================= AUTO LOAN SEIZURE =================
+                // 🛠 FIX (Phase 0 / E3): Previously this did `user.assets = []`,
+                // which wiped EVERY business the user owned — even though the
+                // loaned asset was already removed from `assets` at .loan time
+                // (see economy.js loan case). The reply text said "your
+                // collateral was confiscated" (singular) but the code seized
+                // everything. Now we only null the loan fields, which matches
+                // both the UI promise and the .loan logic at the other end.
                 if (user?.loanDue && Date.now() > user.loanDue && user.debt > 0) {
-                    user.assets = [];
+                    const seizedAssetName = user.loanAsset?.name || "your collateral";
                     user.debt = 0;
                     user.loanDue = null;
                     user.loanAsset = null;
                     await user.save();
-                    await reply("🚨 LOAN SEIZURE: Your collateral was confiscated.");
+                    await reply(`🚨 LOAN SEIZURE: ${seizedAssetName} was confiscated as collateral.`);
                 }
 
                 // ================= BAN AUTO-CHECK =================

@@ -166,7 +166,11 @@ module.exports = async (context) => {
         case "ban": {
             if (!target) return reply("Usage: .ban <duration> <reason> @user (or reply)\ne.g. .ban 2d spamming links @user\ne.g. .ban scamming people @user  (permanent, no duration)");
 
-            if (!isBotOwner && !isGroupAdmin) return reply("🚫 Admin access required.");
+            // 🛠 FIX (Phase 0 / E5): .ban writes to the User doc globally
+            // (not scoped to this group), so a group admin in Group A could
+            // ban a user from EVERY group the bot operates in — and even
+            // ban the bot owner. Restricted to bot owner only.
+            if (!isBotOwner) return reply("🚫 Owner only — .ban affects every group, not just this one.");
 
             const durationInput = args[0];
             const duration = parseBanDuration(durationInput);
@@ -213,6 +217,10 @@ ${duration ? `⏳ Duration: ${durationInput}` : "⚠️ PERMANENT"}
         // ===============================
         case "unban": {
             if (!target) return reply("Usage: .unban @user");
+            // 🛠 FIX (Phase 0 / E5): .unban lifts a bot-wide ban (stored on
+            // the User doc, not per-group). Group admins should not be able
+            // to unban scammers the bot owner banned globally.
+            if (!isBotOwner) return reply("🚫 Owner only — .unban affects every group, not just this one.");
             await User.collection.updateOne(
                 { userId: target },
                 { $set: { banned: false }, $unset: { banUntil: "", banReason: "", bannedBy: "", bannedAt: "" } }
@@ -229,6 +237,11 @@ ${duration ? `⏳ Duration: ${durationInput}` : "⚠️ PERMANENT"}
         // ===============================
         case "info": {
             if (!target) return reply("Usage: .info @user (or reply)");
+            // 🛠 FIX (Phase 0 / E5): .info exposes bot-wide moderation data
+            // (ban reason, banner, freeze reason) for ANY phone number —
+            // not just members of this group. Group admins shouldn't have
+            // global visibility into who banned whom across all groups.
+            if (!isBotOwner) return reply("🚫 Owner only — .info exposes bot-wide moderation records.");
 
             // 🛠 Raw collection read — guarantees we see banReason/afk/etc
             // even if they aren't declared in the Mongoose schema.
@@ -912,6 +925,10 @@ Warnings: ${list.length}/3
         // ===============================
         case "freeze": {
             if (!target) return reply("Usage: .freeze @user <reason>");
+            // 🛠 FIX (Phase 0 / E5): freeze map is keyed by raw JID, not by
+            // group, so a freeze blocks the user from the economy in EVERY
+            // group the bot operates in. Restricted to bot owner.
+            if (!isBotOwner) return reply("🚫 Owner only — freeze affects every group, not just this one.");
             if (!global._frozenUsers) global._frozenUsers = new Map();
 
             const reason = args.slice(1).join(" ") || "No reason given";
@@ -921,6 +938,8 @@ Warnings: ${list.length}/3
 
         case "unfreeze": {
             if (!target) return reply("Usage: .unfreeze @user");
+            // 🛠 FIX (Phase 0 / E5): mirror .freeze — bot-wide effect, owner only.
+            if (!isBotOwner) return reply("🚫 Owner only — freeze affects every group, not just this one.");
             global._frozenUsers?.delete(target);
             return reply(`✅ @${cleanId(target)} can use the economy again.`, [target]);
         }
@@ -983,6 +1002,11 @@ Warnings: ${list.length}/3
         // ===============================
         case "clearcooldowns": {
             if (!target) return reply("Usage: .clearcooldowns @user");
+            // 🛠 FIX (Phase 0 / E5): wipes the target's cooldowns Map across
+            // ALL groups (gamble cooldowns, rob cooldowns, daily claim, etc.).
+            // Group admins shouldn't be able to grant themselves or friends
+            // unlimited spins/daily claims. Restricted to bot owner.
+            if (!isBotOwner) return reply("🚫 Owner only — cooldowns are bot-wide, not group-scoped.");
             const userDB = await User.findOne({ userId: target });
             if (!userDB) return reply("User not found.");
 
