@@ -14,28 +14,22 @@
  * their proper module. When all commands are migrated, the legacy
  * file is deleted.
  *
- * Current migration status (Phase 2.5 batch 5):
- *   ✅ Migrated to src/commands/economy/progression.js:
- *      .cd, .daily, .work, .beg, .lb, .richest, .profile
- *   ✅ Migrated to src/commands/economy/money.js:
- *      .bal, .dep, .wd, .give, .send
- *   ✅ Migrated to src/commands/economy/gamble.js:
- *      .casino, .slots, .cf, .roulette
- *   ✅ Migrated to src/commands/economy/cards.js:
- *      .col, .view, .burn
- *   ✅ Migrated to src/commands/economy/social.js:
- *      .marry, .divorce, .spouse, .marriageaccept, .marriagereject
- *      .slap, .kill, .yeet, .fuck, .kiss
- *   ✅ Migrated to src/commands/economy/businesses.js:
- *      .shop, .buy, .sell, .assets, .items, .tools
- *   ✅ Migrated to src/commands/economy/info.js:
- *      .menu, .help, .about, .test, .debug, .afk
- *   ✅ Migrated to src/commands/economy/transactions.js:
- *      .loan, .payloan, .bail, .trade, .tradeaccept, .tradereject, .fuse, .rob
- *   ⬜ Legacy (still in _economyLegacy.js):
- *      .dice, .heist, .join, .protect, .claim, .auction, .bid,
- *      .ttt, .move, .rps, .throw, .race, .dogbet, .pnt, .pntjoin,
- *      .accept, .reject, .yes, .no, .roll
+ * Current migration status (Phase 2.5 FINAL — ALL commands migrated):
+ *   ✅ progression.js: .cd, .daily, .work, .beg, .lb, .richest, .profile
+ *   ✅ money.js: .bal, .dep, .wd, .give, .send
+ *   ✅ gamble.js: .casino, .slots, .cf, .roulette
+ *   ✅ cards.js: .col, .view, .burn
+ *   ✅ social.js: .marry, .divorce, .spouse, .marriageaccept, .marriagereject, .slap, .kill, .yeet, .fuck, .kiss
+ *   ✅ businesses.js: .shop, .buy, .sell, .assets, .items, .tools
+ *   ✅ info.js: .menu, .help, .about, .test, .debug, .afk
+ *   ✅ transactions.js: .loan, .payloan, .bail, .trade, .tradeaccept, .tradereject, .fuse, .rob
+ *   ✅ games.js: .ttt, .move, .rps, .throw, .race, .dogbet, .pnt, .pntjoin, .dice, .accept, .reject, .roll, .yes, .no
+ *   ✅ events.js: .heist, .join, .protect, .claim, .auction, .bid
+ *   ⬜ Legacy file (_economyLegacy.js) now acts as a GAME-ENGINE LIBRARY only:
+ *      module-level functions (tttStartChallenge, runDogRace, maybeTriggerHacker,
+ *      spawnTrivia, etc.) + shared Maps + setInterval schedulers. No commands
+ *      are dispatched through it anymore — all command dispatch goes through
+ *      the 10 modules above via MIGRATED_COMMANDS.
  *
  * This file's ONLY job is to dispatch — it doesn't implement any
  * command logic itself.
@@ -70,6 +64,8 @@ const social = require("./economy/social");
 const businesses = require("./economy/businesses");
 const info = require("./economy/info");
 const transactions = require("./economy/transactions");
+const games = require("./economy/games");
+const events = require("./economy/events");
 
 const MIGRATED_COMMANDS = new Map(); // command → handler module
 for (const cmd of progression.PROGRESSION_COMMANDS) MIGRATED_COMMANDS.set(cmd, progression);
@@ -80,6 +76,8 @@ for (const cmd of social.SOCIAL_COMMANDS) MIGRATED_COMMANDS.set(cmd, social);
 for (const cmd of businesses.BUSINESS_COMMANDS) MIGRATED_COMMANDS.set(cmd, businesses);
 for (const cmd of info.INFO_COMMANDS) MIGRATED_COMMANDS.set(cmd, info);
 for (const cmd of transactions.TRANSACTION_COMMANDS) MIGRATED_COMMANDS.set(cmd, transactions);
+for (const cmd of games.GAME_COMMANDS) MIGRATED_COMMANDS.set(cmd, games);
+for (const cmd of events.EVENT_COMMANDS) MIGRATED_COMMANDS.set(cmd, events);
 
 // ── Economy commands list (all commands — for the outer gate) ──
 const ECONOMY_COMMANDS = new Set([
