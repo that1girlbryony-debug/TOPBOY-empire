@@ -60,6 +60,11 @@ module.exports = async (context) => {
     const senderId = sender.split("@")[0];
     const isGroup = chat.endsWith("@g.us");
     const isBotOwner = config.ownerNumbers.some(owner => owner.split("@")[0] === senderId);
+    // 🛠 FIX (Phase 1 / 1.4): helper to check if ANY target JID is a bot
+    // owner. Used by votekick/warn/kick to prevent group-admin actions
+    // against the bot owner (who may not be a group admin in every chat).
+    const isOwnerTarget = (jid) =>
+        config.ownerNumbers.some(owner => owner.split("@")[0] === jid.split("@")[0]);
 
     let isGroupAdmin = false;
     let botIsAdmin = false;
@@ -430,6 +435,16 @@ ${duration ? `⏳ Duration: ${durationInput}` : "⚠️ PERMANENT"}
             // Can't votekick the bot
             if (normalizeJid(target) === normalizeJid(config.botLid)) {
                 return reply("🚫 Can't vote-kick me.");
+            }
+
+            // 🛠 FIX (Phase 1 / 1.4): Can't votekick the bot owner. The
+            // owner may not be a WhatsApp group admin in every chat, so
+            // the existing admin-check above doesn't catch them. Without
+            // this check, a coalition of regular users could vote-kick
+            // the owner out of their own authorized group, which then
+            // triggers the unauthorized-group check (auto-leave + ban).
+            if (isOwnerTarget(target)) {
+                return reply("🚫 Can't vote-kick the bot owner.");
             }
 
             voteKicks.set(chat, {
@@ -864,6 +879,15 @@ Everyone can send messages again.
         // ===============================
         case "warn": {
             if (!target) return reply("Usage: .warn @user <reason>");
+            // 🛠 FIX (Phase 1 / 1.4): block warnings against the bot owner
+            // entirely. The 3-warning auto-kick could otherwise be used by
+            // group admins to remove the owner from their own authorized
+            // group. (Kicking via .warn admin-powers is also blocked at
+            // the WhatsApp layer for promoted admins, but the owner may
+            // not be a group admin in every chat.)
+            if (isOwnerTarget(target)) {
+                return reply("🚫 Can't warn the bot owner.");
+            }
             if (!global._warnings) global._warnings = new Map();
 
             const reason = args.slice(1).join(" ") || "No reason given";
@@ -874,6 +898,13 @@ Everyone can send messages again.
 
             if (list.length >= 3) {
                 global._warnings.delete(key);
+
+                // 🛠 FIX (Phase 1 / 1.4): belt-and-suspenders — re-check
+                // target is the owner before kicking (in case the owner
+                // list was edited between the early check and now).
+                if (isOwnerTarget(target)) {
+                    return reply("🚫 Can't auto-kick the bot owner.");
+                }
                 if (botIsAdmin) {
                     try {
                         await sock.groupParticipantsUpdate(chat, [target], "remove");

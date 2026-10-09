@@ -180,10 +180,29 @@ async function maybeTriggerHacker(sock, chat) {
   // targets whoever is actually #1 — no randomness in who gets hit.
   // Also requires at least 2 assets to even be eligible, since you
   // can't meaningfully take "half" from someone with just 1.
-  const users = await User.find({}, "userId wallet bank assets debt banned");
+  //
+  // 🛠 FIX (Phase 1 / 1.3): include `loanAsset` in the asset count
+  // so a wealthy user can't dodge the hacker by loaning an asset
+  // (which moves it out of `assets` into `loanAsset`). Without this
+  // fix, the #1 player could loan against any asset → assets.length
+  // drops below the eligibility floor → hacker skips them entirely.
+  // Then they .payloan after the 12h hacker window passes. The
+  // collateralized asset now counts toward eligibility.
+  const users = await User.find({}, "userId wallet bank assets debt loanAsset banned");
   const eligible = users
-    .filter(u => !u.banned && Array.isArray(u.assets) && u.assets.length >= 2)
-    .map(u => ({ userId: u.userId, net: calculateNetWorth(u) }))
+    .filter(u => {
+      if (u.banned) return false;
+      const realAssets = Array.isArray(u.assets) ? u.assets.length : 0;
+      const loanedAssets = u.loanAsset ? 1 : 0;
+      return (realAssets + loanedAssets) >= 2;
+    })
+    .map(u => {
+      // Include loanAsset value in net worth so the hacker still sees
+      // the loaner as #1 (or close to it).
+      const baseNet = calculateNetWorth(u);
+      const loanAssetValue = u.loanAsset?.price || 0;
+      return { userId: u.userId, net: baseNet + loanAssetValue };
+    })
     .sort((a, b) => b.net - a.net);
 
   if (!eligible.length) return false;
@@ -213,6 +232,20 @@ businesses... and got traced and blocked!
   }
 
   const victim = await User.findOne({ userId: targetInfo.userId });
+  // 🛠 FIX (Phase 1 / 1.3): if victim has < 2 visible assets but has a
+  // loanAsset (they used .loan to dodge the hacker), restore the
+  // loaned asset to assets first so the hacker can seize it. Without
+  // this, the eligibility check above said "yes, target them" but
+  // this bail-out would let them off the hook again.
+  if (victim && victim.loanAsset && (!victim.assets || victim.assets.length < 2)) {
+    victim.assets = victim.assets || [];
+    victim.assets.push(victim.loanAsset);
+    victim.loanAsset = null;
+    // Note: we DON'T clear debt/loanDue here — the loan is still owed.
+    // The hacker just seizes the physical asset back from the bank's
+    // vault. (User still owes the bank the loan amount — separate concern.)
+    await victim.save();
+  }
   if (!victim || !victim.assets || victim.assets.length < 2) return true; // nothing meaningful to seize
 
   // 🛠 FIX: was Math.ceil() — for an odd count (or worst case, exactly
@@ -233,7 +266,19 @@ businesses... and got traced and blocked!
     seizedAssets.push(victim.assets[i]);
     victim.assets.splice(i, 1);
   }
-  await victim.save();
+  // 🛠 FIX (Phase 1 / 1.1): use atomic $set on the whole array rather
+  // than victim.save() — maybeTriggerHacker runs from a setTimeout
+  // (the spontaneous-events scheduler) outside the command queue.
+  // Also clears loanAsset if we restored it above.
+  await User.updateOne(
+    { userId: victim.userId },
+    {
+      $set: {
+        assets: victim.assets,
+        loanAsset: victim.loanAsset  // null if we restored it above
+      }
+    }
+  ).catch(err => console.error("hacker victim save failed:", err.message));
 
   const lostValue = seizedAssets.reduce((s, a) => s + (a.price || 0), 0);
   const lostIncome = seizedAssets.reduce((s, a) => s + (a.income || 0), 0);
@@ -283,6 +328,53 @@ if (!global._hackerSchedulerTimer) {
 
 // ---------- ❌⭕ X AND O ----------
 if (!global._tttGames) global._tttGames = new Map();
+
+// 🛠 FIX (Phase 1 / 1.2): Per-move timeout for accepted TTT games.
+// Without this, an accepted-but-abandoned game lives in global._tttGames
+// forever, AND blocks all future TTT games in that chat (the .ttt
+// command checks has(chat) first and returns "already active").
+const TTT_MOVE_TIMEOUT = 120000; // 2 minutes per move
+
+// Schedules an auto-forfeit for the current player. Each .move clears
+// the previous timer and schedules a new one for the next player.
+// On timeout: the stalled player forfeits, opponent gets the full pot,
+// game is deleted from the map.
+function scheduleTTTMoveTimeout(chat, reply) {
+  const game = global._tttGames.get(chat);
+  if (!game || !game.accepted) return;
+
+  // Clear any existing timer for this chat
+  if (game.moveTimer) clearTimeout(game.moveTimer);
+
+  game.moveTimer = setTimeout(async () => {
+    const g = global._tttGames.get(chat);
+    if (!g || !g.accepted) return;
+
+    const forfeiter = g.turn;
+    const winner = forfeiter === g.player1 ? g.player2 : g.player1;
+    const pot = g.stake * 2;
+
+    // 🛠 FIX (Phase 1 / 1.1): atomic $inc for the winner payout
+    await User.updateOne(
+      { userId: winner },
+      { $inc: { wallet: pot } }
+    ).catch(err => console.error("TTT forfeit payout failed:", err.message));
+
+    global._tttGames.delete(chat);
+
+    reply(
+`▬▬▬▬▬▬▬▬▬▬▬▬▬▬
+*⏱️ TTT — FORFEIT*
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬
+
+@${forfeiter.split("@")[0]} didn't move in time.
+🏆 @${winner.split("@")[0]} wins $${formatMoney(pot)} by forfeit!
+
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬`,
+      [forfeiter, winner]
+    );
+  }, TTT_MOVE_TIMEOUT);
+}
 
 function renderTTTBoard(board) {
   const symbols = { X: "❌", O: "⭕", "": "⬜" };
@@ -369,6 +461,13 @@ async function tttAccept(sender, chat, reply) {
   game.symbols[game.player2] = "O";
   game.turn = game.player1;
 
+  // 🛠 FIX (Phase 1 / 1.2): Start per-move timeout. If the current
+  // player doesn't move within TTT_MOVE_TIMEOUT, they forfeit and the
+  // opponent gets the pot. Without this, an accepted-but-abandoned
+  // TTT game lives in global._tttGames forever AND blocks all future
+  // TTT games in that chat (the .ttt command checks has(chat) first).
+  scheduleTTTMoveTimeout(chat, reply);
+
   reply(
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 *❌⭕ GAME ON*
@@ -379,6 +478,7 @@ Both locked in $${formatMoney(game.stake)}
 ${renderTTTBoard(game.board)}
 🎯 @${game.player1.split("@")[0]} is ❌ — goes first
 Type *.move <1-9>*
+⏱️ You have ${TTT_MOVE_TIMEOUT / 1000}s per move or you forfeit
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬`,
     [game.player1, game.player2]
   );
@@ -410,10 +510,19 @@ async function tttMove(sender, chat, posArg, reply) {
   const other = sender === game.player1 ? game.player2 : game.player1;
 
   if (result === "draw") {
-    const p1 = await User.findOne({ userId: game.player1 });
-    const p2 = await User.findOne({ userId: game.player2 });
-    if (p1) { p1.wallet += game.stake; await p1.save(); }
-    if (p2) { p2.wallet += game.stake; await p2.save(); }
+    // 🛠 FIX (Phase 1 / 1.2): clear the move timer when the game ends
+    if (game.moveTimer) clearTimeout(game.moveTimer);
+
+    // 🛠 FIX (Phase 1 / 1.1): atomic refunds instead of read-modify-write
+    await User.updateOne(
+      { userId: game.player1 },
+      { $inc: { wallet: game.stake } }
+    ).catch(() => {});
+    await User.updateOne(
+      { userId: game.player2 },
+      { $inc: { wallet: game.stake } }
+    ).catch(() => {});
+
     global._tttGames.delete(chat);
     return reply(
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
@@ -428,9 +537,16 @@ ${renderTTTBoard(game.board)}
   }
 
   if (result) {
-    const winner = await User.findOne({ userId: sender });
+    // 🛠 FIX (Phase 1 / 1.2): clear the move timer when the game ends
+    if (game.moveTimer) clearTimeout(game.moveTimer);
+
     const pot = game.stake * 2;
-    if (winner) { winner.wallet += pot; await winner.save(); }
+    // 🛠 FIX (Phase 1 / 1.1): atomic $inc for the winner payout
+    await User.updateOne(
+      { userId: sender },
+      { $inc: { wallet: pot } }
+    ).catch(err => console.error("TTT winner payout failed:", err.message));
+
     global._tttGames.delete(chat);
     return reply(
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
@@ -444,11 +560,15 @@ ${renderTTTBoard(game.board)}
     );
   }
 
+  // Turn switched — schedule the new player's forfeit timer
   game.turn = other;
+  scheduleTTTMoveTimeout(chat, reply);
+
   return reply(
 `${renderTTTBoard(game.board)}
 🎯 @${other.split("@")[0]}'s turn (${game.symbols[other]})
-Type *.move <1-9>*`,
+Type *.move <1-9>*
+⏱️ ${TTT_MOVE_TIMEOUT / 1000}s or you forfeit`,
     [other]
   );
 }
@@ -512,11 +632,13 @@ async function checkQuickDraw(sender, chat, text, sock) {
   g.claimed = true;
   global._quickDraw.delete(chat);
 
-  const user = await User.findOne({ userId: sender });
-  if (user) {
-    user.wallet += QD_REWARD;
-    await user.save();
-  }
+  // 🛠 FIX (Phase 1 / 1.1): atomic $inc instead of read-modify-write.
+  // checkQuickDraw runs from the message handler on non-prefix messages,
+  // which can interleave with queued commands for the same user.
+  await User.updateOne(
+    { userId: sender },
+    { $inc: { wallet: QD_REWARD } }
+  ).catch(err => console.error("quickdraw payout failed:", err.message));
 
   await sock.sendMessage(chat, {
     text: `⚡ @${sender.split("@")[0]} was fastest and won $${formatMoney(QD_REWARD)}! 🎉`,
@@ -703,11 +825,14 @@ async function runDogRace(sock, chat) {
       mentions.push(userId);
       if (bet.dog === winner.number) {
         const payout = Math.floor(bet.amount * payoutMultiplier);
-        const winnerUser = await User.findOne({ userId });
-        if (winnerUser) {
-          winnerUser.wallet += payout;
-          await winnerUser.save();
-        }
+        // 🛠 FIX (Phase 1 / 1.1): Atomic $inc instead of read-modify-write.
+        // runDogRace runs in a setTimeout OUTSIDE the command queue, so a
+        // concurrent .daily/.work/.claim could overwrite the winner's
+        // wallet if we used the old findOne → wallet += payout → save.
+        await User.updateOne(
+          { userId },
+          { $inc: { wallet: payout } }
+        ).catch(err => console.error(`dog race payout failed for ${userId}:`, err.message));
         resultText += `✅ @${userId.split("@")[0]} won $${formatMoney(payout)}\n`;
       } else {
         resultText += `💀 @${userId.split("@")[0]} lost $${formatMoney(bet.amount)}\n`;
@@ -757,6 +882,51 @@ if (!global._rpsPlayerToChat) global._rpsPlayerToChat = new Map(); // playerId -
 
 const RPS_EMOJI = { rock: "🪨", paper: "📄", scissors: "✂️" };
 const RPS_ALIASES = { rock: "rock", r: "rock", paper: "paper", p: "paper", scissors: "scissors", s: "scissors" };
+
+// 🛠 FIX (Phase 1 / 1.2): Overall throw timeout for accepted RPS games.
+// Without this, an accepted-but-stalled RPS game lives in
+// global._rpsGames forever AND in global._rpsPlayerToChat (per-player),
+// which also blocks both players from joining PNT (line ~1330 checks
+// _rpsPlayerToChat first). After RPS_GAME_TIMEOUT, refund both stakes
+// and clean up both maps.
+const RPS_GAME_TIMEOUT = 5 * 60 * 1000; // 5 minutes to throw
+
+function scheduleRPSGameTimeout(chat, sock, reply) {
+  const game = global._rpsGames.get(chat);
+  if (!game || !game.accepted) return;
+
+  if (game.gameTimer) clearTimeout(game.gameTimer);
+
+  game.gameTimer = setTimeout(async () => {
+    const g = global._rpsGames.get(chat);
+    if (!g || !g.accepted) return;
+
+    // 🛠 FIX (Phase 1 / 1.1): atomic refunds to both players
+    await User.updateOne(
+      { userId: g.player1 },
+      { $inc: { wallet: g.stake } }
+    ).catch(() => {});
+    await User.updateOne(
+      { userId: g.player2 },
+      { $inc: { wallet: g.stake } }
+    ).catch(() => {});
+
+    global._rpsGames.delete(chat);
+    global._rpsPlayerToChat.delete(g.player1);
+    global._rpsPlayerToChat.delete(g.player2);
+
+    sock.sendMessage(chat, {
+      text:
+`⏱️ *RPS — TIMED OUT*
+
+Neither player finished in time.
+Stakes refunded to both.
+
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬`,
+      mentions: [g.player1, g.player2]
+    }).catch(() => {});
+  }, RPS_GAME_TIMEOUT);
+}
 
 function rpsBeats(a, b) {
   return (a === "rock" && b === "scissors") ||
@@ -824,6 +994,11 @@ async function rpsAccept(sock, sender, chat, reply) {
 
   global._rpsPlayerToChat.set(game.player1, chat);
   global._rpsPlayerToChat.set(game.player2, chat);
+
+  // 🛠 FIX (Phase 1 / 1.2): Start the throw timeout — both players
+  // have RPS_GAME_TIMEOUT to finish their throws or the stakes are
+  // refunded and both maps are cleaned up.
+  scheduleRPSGameTimeout(chat, sock, reply);
 
   // 🛠 IMPORTANT: the bot no longer DMs anyone here. WhatsApp flags
   // bots that push unprompted DMs to multiple numbers at once as
@@ -920,6 +1095,8 @@ async function rpsThrowDM(sock, sender, choiceArg) {
   // Both have thrown — resolve and reveal PUBLICLY in the group.
   const c1 = game.throws[game.player1];
   const c2 = game.throws[game.player2];
+  // 🛠 FIX (Phase 1 / 1.2): clear the throw timeout — game is resolving
+  if (game.gameTimer) clearTimeout(game.gameTimer);
   global._rpsGames.delete(chat);
   global._rpsPlayerToChat.delete(game.player1);
   global._rpsPlayerToChat.delete(game.player2);
@@ -927,10 +1104,16 @@ async function rpsThrowDM(sock, sender, choiceArg) {
   const pot = game.stake * 2;
 
   if (c1 === c2) {
-    const p1 = await User.findOne({ userId: game.player1 });
-    const p2 = await User.findOne({ userId: game.player2 });
-    if (p1) { p1.wallet += game.stake; await p1.save(); }
-    if (p2) { p2.wallet += game.stake; await p2.save(); }
+    // 🛠 FIX (Phase 1 / 1.1): atomic refunds to both players
+    await User.updateOne(
+      { userId: game.player1 },
+      { $inc: { wallet: game.stake } }
+    ).catch(() => {});
+    await User.updateOne(
+      { userId: game.player2 },
+      { $inc: { wallet: game.stake } }
+    ).catch(() => {});
+
     await sock.sendMessage(chat, {
       text:
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
@@ -949,8 +1132,11 @@ async function rpsThrowDM(sock, sender, choiceArg) {
 
   const p1Wins = rpsBeats(c1, c2);
   const winnerId = p1Wins ? game.player1 : game.player2;
-  const winner = await User.findOne({ userId: winnerId });
-  if (winner) { winner.wallet += pot; await winner.save(); }
+  // 🛠 FIX (Phase 1 / 1.1): atomic $inc for the winner payout
+  await User.updateOne(
+    { userId: winnerId },
+    { $inc: { wallet: pot } }
+  ).catch(err => console.error("RPS winner payout failed:", err.message));
 
   await sock.sendMessage(chat, {
     text:
@@ -1052,7 +1238,16 @@ async function finalizePNTLobby(sock, chat) {
 
 async function startPNTGame(sock, chat, players) {
   const { police, thieves, civilians } = assignPNTRoles(players.length);
-  const shuffled = [...players].sort(() => Math.random() - 0.5);
+  // 🛠 FIX (Phase 1 / 1.3): Fisher-Yates shuffle instead of the biased
+  // `.sort(() => Math.random() - 0.5)` antipattern. The old comparator
+  // sort is not a uniform shuffle on V8 — certain seat orders got
+  // police/thief roles more often than others, skewing role distribution
+  // across many games. Fisher-Yates guarantees a uniform permutation.
+  const shuffled = [...players];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
 
   const roles = {};
   let idx = 0;
@@ -1293,6 +1488,27 @@ async function finalizePNTGame(sock, chat) {
 
   text += `\n👑 Winner${winners.length > 1 ? "s" : ""}: ${winners.map(id => "@" + id.split("@")[0]).join(", ")}`;
 
+  // 🛠 FIX (Phase 1 / 1.3): PNT now pays a real prize. Previously the
+  // 3-round, multi-player game gave ZERO reward, making it a pure
+  // time sink — players would quit and never come back. Compare to
+  // TTT/RPS/Dice which all pay a stake, and trivia which pays $5M/$50M.
+  // Now: each winner gets $5M + 50 XP, paid atomically.
+  const PNT_PRIZE = 5000000;   // $5M
+  const PNT_XP = 50;
+
+  for (const winnerId of winners) {
+    if (maxScore > 0) {
+      await User.updateOne(
+        { userId: winnerId },
+        { $inc: { wallet: PNT_PRIZE, xp: PNT_XP } }
+      ).catch(err => console.error("PNT winner payout failed:", err.message));
+    }
+  }
+
+  if (maxScore > 0 && winners.length > 0) {
+    text += `\n💰 Each winner: $${formatMoney(PNT_PRIZE)} + ${PNT_XP} XP`;
+  }
+
   await sock.sendMessage(chat, { text, mentions: game.players });
 
   for (const id of game.players) global._pntPlayerToChat.delete(id);
@@ -1384,11 +1600,30 @@ const marriageProposals = global._marriageProposals;
 if (!global._triviaActive) global._triviaActive = new Map();
 
 // Cleanup expired marriage proposals every 60s
+// 🛠 FIX (Phase 1 / 1.2): Was silent — proposer waited forever for an
+// accept/reject reply that never came. Now sends an expiry message to
+// the chat where the proposal was made (uses global._lastKnownSock,
+// the same pattern as the auto-race scheduler).
 if (!global._proposalCleanup) {
   global._proposalCleanup = setInterval(() => {
     const now = Date.now();
     for (const [key, p] of marriageProposals) {
-      if (now > p.expiresAt) marriageProposals.delete(key);
+      if (now > p.expiresAt) {
+        marriageProposals.delete(key);
+        // Send an expiry notification if we have a sock + chat recorded
+        if (p.chat && global._lastKnownSock) {
+          global._lastKnownSock.sendMessage(p.chat, {
+            text:
+`⏱️ *MARRIAGE PROPOSAL EXPIRED*
+
+@${p.proposer.split("@")[0]}'s proposal to
+@${p.target.split("@")[0]} timed out.
+
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬`,
+            mentions: [p.proposer, p.target]
+          }).catch(() => {});
+        }
+      }
     }
   }, 60000);
 }
@@ -1475,20 +1710,21 @@ ${question}
         // Find fastest correct answer
         const winner = active.correctUsers[0];
 
-        // Award prize
+        // 🛠 FIX (Phase 1 / 1.1): atomic $inc instead of read-modify-write.
+        // The 30s prize setTimeout runs outside the command queue.
+        await User.updateOne(
+          { userId: winner },
+          { $inc: { wallet: active.prize } }
+        ).catch(err => console.error("trivia winner payout failed:", err.message));
+
+        // Spouse share 20% — also atomic
         const winUser = await User.findOne({ userId: winner });
-        if (winUser) {
-          winUser.wallet += active.prize;
-          // Spouse share 20%
-          if (winUser.marriage?.spouseId) {
-            const spouseShare = Math.floor(active.prize * 0.2);
-            const spouse = await User.findOne({ userId: winUser.marriage.spouseId });
-            if (spouse) {
-              spouse.wallet += spouseShare;
-              await spouse.save();
-            }
-          }
-          await winUser.save();
+        if (winUser?.marriage?.spouseId) {
+          const spouseShare = Math.floor(active.prize * 0.2);
+          await User.updateOne(
+            { userId: winUser.marriage.spouseId },
+            { $inc: { wallet: spouseShare } }
+          ).catch(err => console.error("trivia spouse share failed:", err.message));
         }
 
         await sock.sendMessage(chat, {
@@ -1503,7 +1739,7 @@ ${question}
 👑 Winner: @${winner.split("@")[0]}
 ⚡ First to answer correctly
 
-💰 Won: $5,000,000
+💰 Won: $${formatMoney(active.prize)}
 📊 ${active.answeredUsers.size} players tried
 
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬`,
@@ -1581,6 +1817,12 @@ async function spawnMultiTrivia(sock, chat, mentions, questionCount = 10) {
       questions,
       currentIndex: 0,
       scores: {}, // userId -> correct count
+      // 🛠 FIX (Phase 1 / 1.3): per-question answered set, mirroring
+      // single-trivia's `answeredUsers` Set. Without this, a user could
+      // spam "A B C D" and one of them was guaranteed correct — getting
+      // max score on every multi-trivia and winning $50M every time.
+      // Each entry: a Set of userIds who already answered that question.
+      answeredByQ: Array.from({ length: questionCount }, () => new Set()),
       questionCount,
       prize: 50000000,
       expiresAt: Date.now() + (30000 * questionCount)
@@ -1622,6 +1864,11 @@ First question coming up...
     }
 
     // Show final results after last question
+    // 🛠 FIX (Phase 1 / 1.3): Was `30000 * questionCount + 5000`, which
+    // fires 16s BEFORE the last question's 30s answer window closes (the
+    // loop ends at ~291s for N=10, last question's window ends at ~321s,
+    // but old code fired at 305s). Now waits for the last question's
+    // full window: (N-1)*32s + 3s + 30s + 5s grace.
     setTimeout(async () => {
       const active = multiTrivia.get(chat);
       if (!active) return;
@@ -1638,11 +1885,11 @@ First question coming up...
       }
 
       if (winnerId && maxScore > 0) {
-        const winUser = await User.findOne({ userId: winnerId });
-        if (winUser) {
-          winUser.wallet += active.prize;
-          await winUser.save();
-        }
+        // 🛠 FIX (Phase 1 / 1.1): atomic $inc instead of read-modify-write
+        await User.updateOne(
+          { userId: winnerId },
+          { $inc: { wallet: active.prize } }
+        ).catch(err => console.error("multi-trivia winner payout failed:", err.message));
 
         await sock.sendMessage(chat, {
           text:
@@ -1653,7 +1900,7 @@ First question coming up...
 👑 Winner: @${winnerId.split("@")[0]}
 ✅ Correct: ${maxScore}/${questionCount}
 
-💰 Won: $50,000,000
+💰 Won: $${formatMoney(active.prize)}
 
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬`,
           mentions: [winnerId]
@@ -1673,7 +1920,10 @@ No winners!
       }
 
       multiTrivia.delete(chat);
-    }, 30000 * questionCount + 5000);
+      // 🛠 FIX (Phase 1 / 1.3): correct timing — wait for: initial 3s
+      // delay + (N-1) questions * 32s gap + final question's 30s window
+      // + 5s grace. Old value `30000 * questionCount + 5000` fired too early.
+    }, 3000 + (questionCount - 1) * 32000 + 30000 + 5000);
 
     return true;
   } catch (err) {
@@ -1734,6 +1984,48 @@ const activeDiceGames = new Map();
 const activeAuctions = new Map();
 const activeHeists = new Map();
 const heistCooldowns = new Map(); // group cooldown
+
+// 🛠 FIX (Phase 1 / 1.2): Per-turn timeout for accepted dice games.
+// Without this, an accepted-but-stalled dice game lives in
+// activeDiceGames forever, AND locks stakes forever (both players
+// already paid in at .accept time). After DICE_MOVE_TIMEOUT, refund
+// both stakes and clean up.
+const DICE_MOVE_TIMEOUT = 90000; // 90s per roll
+
+function scheduleDiceMoveTimeout(chat, sock) {
+  const game = activeDiceGames.get(chat);
+  if (!game || !game.accepted) return;
+
+  if (game.moveTimer) clearTimeout(game.moveTimer);
+
+  game.moveTimer = setTimeout(async () => {
+    const g = activeDiceGames.get(chat);
+    if (!g || !g.accepted) return;
+
+    // 🛠 FIX (Phase 1 / 1.1): atomic refunds to both players
+    await User.updateOne(
+      { userId: g.player1 },
+      { $inc: { wallet: g.stake } }
+    ).catch(() => {});
+    await User.updateOne(
+      { userId: g.player2 },
+      { $inc: { wallet: g.stake } }
+    ).catch(() => {});
+
+    activeDiceGames.delete(chat);
+
+    sock.sendMessage(chat, {
+      text:
+`⏱️ *DICE — TIMED OUT*
+
+@${g.turn.split("@")[0]} didn't roll in time.
+Stakes refunded to both.
+
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬`,
+      mentions: [g.player1, g.player2]
+    }).catch(() => {});
+  }, DICE_MOVE_TIMEOUT);
+}
 
 // 🛠 FIX: this was declared INSIDE module.exports (function scope) but
 // used by the cleanup timer below, which runs at module load time in
@@ -2702,32 +2994,34 @@ if (command === "auction") {
 
     // ❌ No bids → return card
     if (!auction.highestBidder) {
-
-      const seller = await User.findOne({ userId: auction.seller });
-      if (seller) {
-        seller.collection.push(auction.card);
-        await seller.save();
-      }
+      // 🛠 FIX (Phase 1 / 1.1): atomic $push instead of read-modify-write
+      await User.updateOne(
+        { userId: auction.seller },
+        { $push: { collection: auction.card } }
+      ).catch(err => console.error("auction return-card failed:", err.message));
 
       return sock.sendMessage(chat, {
         text: "⏳ Auction ended.\nNo bids were placed. Card returned to seller."
       });
     }
 
-    const seller = await User.findOne({ userId: auction.seller });
-    const winner = await User.findOne({ userId: auction.highestBidder });
-
-    if (!seller || !winner) return;
-
     // 💰 TAX: 5% on auction sales
     const taxAmount = Math.floor(auction.highestBid * 0.05);
     const netAmount = auction.highestBid - taxAmount;
 
-    seller.wallet += netAmount;
-    winner.collection.push(auction.card);
+    // 🛠 FIX (Phase 1 / 1.1): atomic $inc for seller wallet + atomic $push
+    // for winner collection. The 60s setTimeout runs outside the command
+    // queue, so the old read-modify-write on seller+winner docs could be
+    // clobbered by a concurrent .claim/.burn/.give on either party.
+    await User.updateOne(
+      { userId: auction.seller },
+      { $inc: { wallet: netAmount } }
+    ).catch(err => console.error("auction seller payout failed:", err.message));
 
-    await seller.save();
-    await winner.save();
+    await User.updateOne(
+      { userId: auction.highestBidder },
+      { $push: { collection: auction.card } }
+    ).catch(err => console.error("auction winner card push failed:", err.message));
 
     sock.sendMessage(chat, {
       text:
@@ -2793,18 +3087,23 @@ if (command === "bid") {
   if (user.wallet < amount)
     return reply("❌ Not enough wallet funds.");
 
-  // Refund previous bidder
+  // Refund previous bidder — 🛠 FIX (Phase 1 / 1.1): atomic $inc, no
+  // read-modify-write that races against the auction-end setTimeout.
   if (auction.highestBidder) {
-    const prevUser = await User.findOne({ userId: auction.highestBidder });
-    if (prevUser) {
-      prevUser.wallet += auction.highestBid;
-      await prevUser.save();
-    }
+    await User.updateOne(
+      { userId: auction.highestBidder },
+      { $inc: { wallet: auction.highestBid } }
+    ).catch(err => console.error("bid refund failed:", err.message));
   }
 
-  // Deduct new bidder
+  // Deduct new bidder — also atomic
+  await User.updateOne(
+    { userId: sender },
+    { $inc: { wallet: -amount } }
+  ).catch(err => console.error("bid deduction failed:", err.message));
+  // Reflect the deduction in the in-memory `user` doc so later code in
+  // this same handler sees the new balance if it inspects user.wallet.
   user.wallet -= amount;
-  await user.save();
 
   auction.highestBid = amount;
   auction.highestBidder = sender;
@@ -3340,12 +3639,27 @@ if (command === "give") {
   if (!target || isNaN(index))
     return reply("Usage: .give index @user");
 
+  // 🛠 FIX (Phase 1 / 1.3): missing self-check — a user could gift a
+  // card to themselves, which doesn't dupe anything but burns a
+  // passive-event roll and reorders their collection indices (which
+  // then confuses .trade/.auction/.burn that use those indices).
+  if (target === sender)
+    return reply("🚫 You can't give a card to yourself.");
+
   if (!user.collection[index])
     return reply("Invalid item index.");
+
+  // 🛠 FIX (Phase 1 / 1.3): frozen/banned targets shouldn't be able
+  // to receive cards — admin sanctions were trivially bypassable by
+  // having a friend .give you cards.
+  if (global._frozenUsers?.has(target))
+    return reply("🚫 That user is frozen by an admin — they can't receive cards.");
 
   const receiver = await User.findOne({ userId: target });
   if (!receiver)
     return reply("User not registered.");
+  if (receiver.banned)
+    return reply("🚫 That user is banned — they can't receive cards.");
 
   const item = user.collection[index];
 
@@ -3960,21 +4274,39 @@ if (command === "bail") {
 const HEIST_DURATION = 80000; // 80 seconds
 // (HEIST_COOLDOWN is now declared at the top of the file — see the note there)
 
-// Helper → take % from wallet + bank safely
+// Helper → take % from wallet + bank ATOMICALLY.
+// 🛠 FIX (Phase 1 / 1.1): Was a read-modify-write that raced against
+// the command queue (the heist resolver runs in a setTimeout outside
+// the queue). Now uses conditional $inc so concurrent commands can't
+// be overwritten. Returns the actual amount lost (0 if user has no
+// funds).
 async function takeTotalPercent(u, min, max) {
+  // Read once for the math (the loss amount itself doesn't need to be
+  // atomic — only the deduction does).
   const total = (u.wallet || 0) + (u.bank || 0);
   if (total <= 0) return 0;
 
   const percent = randomInt(min, max) / 100;
   const loss = Math.floor(total * percent);
 
-  let fromWallet = Math.min(u.wallet, loss);
-  u.wallet -= fromWallet;
+  let fromWallet = Math.min(u.wallet || 0, loss);
+  let fromBank = loss - fromWallet;
 
-  let remaining = loss - fromWallet;
-  if (remaining > 0) {
-    u.bank -= Math.min(u.bank, remaining);
-  }
+  // Apply atomically. $inc with negative numbers decrements.
+  // Mirror back into the in-memory doc so the caller sees the new state
+  // if it inspects fields afterwards (e.g. for logging).
+  await User.updateOne(
+    { userId: u.userId },
+    {
+      $inc: {
+        wallet: -fromWallet,
+        bank: -fromBank
+      }
+    }
+  ).catch(err => console.error(`takeTotalPercent failed for ${u.userId}:`, err.message));
+
+  u.wallet = Math.max(0, (u.wallet || 0) - fromWallet);
+  u.bank = Math.max(0, (u.bank || 0) - fromBank);
 
   return loss;
 }
@@ -4071,10 +4403,18 @@ if (command === "heist") {
         if (!rUser) continue;
 
         const loss = await takeTotalPercent(rUser, 20, 50);
-        rUser.jailUntil = Date.now() + (20 * 60 * 1000);
-        rUser.heistFreeze = false;
-
-        await rUser.save();
+        // 🛠 FIX (Phase 1 / 1.1): takeTotalPercent already updated wallet+bank
+        // atomically. We just need to set jailUntil and clear heistFreeze,
+        // also atomically — no more save() on a stale doc.
+        await User.updateOne(
+          { userId: id },
+          {
+            $set: {
+              jailUntil: Date.now() + (20 * 60 * 1000),
+              heistFreeze: false
+            }
+          }
+        ).catch(err => console.error(`heist robber update failed for ${id}:`, err.message));
 
         totalCollected += loss;
         resultText += `💀 @${id.split("@")[0]} lost $${formatMoney(loss)}\n`;
@@ -4087,21 +4427,23 @@ if (command === "heist") {
       const share = Math.floor(totalCollected / receivers.length);
 
       for (let id of receivers) {
-        const u = await User.findOne({ userId: id });
-        if (!u) continue;
-
-        u.wallet += share;
-        u.heistFreeze = false;
-        await u.save();
+        // 🛠 FIX (Phase 1 / 1.1): atomic $inc instead of read-modify-write
+        await User.updateOne(
+          { userId: id },
+          {
+            $inc: { wallet: share },
+            $set: { heistFreeze: false }
+          }
+        ).catch(err => console.error(`heist receiver update failed for ${id}:`, err.message));
 
         gainText += `💰 @${id.split("@")[0]} gained $${formatMoney(share)}\n`;
       }
 
-      const v = await User.findOne({ userId: victimId });
-      if (v) {
-        v.heistFreeze = false;
-        await v.save();
-      }
+      // Clear victim's heistFreeze too
+      await User.updateOne(
+        { userId: victimId },
+        { $set: { heistFreeze: false } }
+      ).catch(() => {});
 
       return sock.sendMessage(chat, {
         text:
@@ -4126,9 +4468,12 @@ ${gainText}`,
       if (!lUser) continue;
 
       const loss = await takeTotalPercent(lUser, 20, 30);
-      lUser.heistFreeze = false;
-
-      await lUser.save();
+      // 🛠 FIX (Phase 1 / 1.1): takeTotalPercent already deducted atomically;
+      // just clear heistFreeze atomically too.
+      await User.updateOne(
+        { userId: id },
+        { $set: { heistFreeze: false } }
+      ).catch(err => console.error(`heist loser update failed for ${id}:`, err.message));
 
       totalLoot += loss;
       resultText += `💀 @${id.split("@")[0]} lost $${formatMoney(loss)}\n`;
@@ -4137,12 +4482,14 @@ ${gainText}`,
     const share = Math.floor(totalLoot / robbers.length);
 
     for (let id of robbers) {
-      const rUser = await User.findOne({ userId: id });
-      if (!rUser) continue;
-
-      rUser.wallet += share;
-      rUser.heistFreeze = false;
-      await rUser.save();
+      // 🛠 FIX (Phase 1 / 1.1): atomic $inc for robber gains
+      await User.updateOne(
+        { userId: id },
+        {
+          $inc: { wallet: share },
+          $set: { heistFreeze: false }
+        }
+      ).catch(err => console.error(`heist robber gain failed for ${id}:`, err.message));
 
       gainText += `💰 @${id.split("@")[0]} gained $${formatMoney(share)}\n`;
     }
@@ -4970,6 +5317,10 @@ if (command === "accept") {
   game.accepted = true;
   game.turn = game.player1;
 
+  // 🛠 FIX (Phase 1 / 1.2): Start the per-roll timeout. If player1
+  // doesn't .roll within DICE_MOVE_TIMEOUT, both stakes refund.
+  scheduleDiceMoveTimeout(chat, sock);
+
   return reply(
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 *🎲 GAME ON*
@@ -4979,6 +5330,7 @@ Both players locked $${formatMoney(game.stake)}
 
 🎲 @${game.player1.split("@")[0]}'s turn
 Type *.roll*
+⏱️ ${DICE_MOVE_TIMEOUT / 1000}s or stakes refund
 
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬`,
     [game.player1]
@@ -5064,9 +5416,12 @@ if (command === "roll") {
   // Switch turn
   if (sender === game.player1) {
     game.turn = game.player2;
+    // 🛠 FIX (Phase 1 / 1.2): reschedule for the new player's turn
+    scheduleDiceMoveTimeout(chat, sock);
     return reply(
 `🎲 @${game.player2.split("@")[0]}'s turn.
-Type .roll`,
+Type .roll
+⏱️ ${DICE_MOVE_TIMEOUT / 1000}s or stakes refund`,
       [game.player2]
     );
   }
@@ -5079,19 +5434,27 @@ Type .roll`,
   const p2 = await User.findOne({ userId: game.player2 });
 
   if (!p1 || !p2) {
+    if (game.moveTimer) clearTimeout(game.moveTimer);
     activeDiceGames.delete(chat);
     return reply("Game error. Cancelled.");
   }
 
   const totalPot = game.stake * 2;
 
+  // 🛠 FIX (Phase 1 / 1.2): clear the move timer — game is resolving
+  if (game.moveTimer) clearTimeout(game.moveTimer);
+
   // 🤝 TIE → REFUND
   if (roll1 === roll2) {
-    p1.wallet += game.stake;
-    p2.wallet += game.stake;
-
-    await p1.save();
-    await p2.save();
+    // 🛠 FIX (Phase 1 / 1.1): atomic refunds to both players
+    await User.updateOne(
+      { userId: game.player1 },
+      { $inc: { wallet: game.stake } }
+    ).catch(() => {});
+    await User.updateOne(
+      { userId: game.player2 },
+      { $inc: { wallet: game.stake } }
+    ).catch(() => {});
 
     activeDiceGames.delete(chat);
 
@@ -5111,9 +5474,11 @@ Type .roll`,
   }
 
   const winner = roll1 > roll2 ? p1 : p2;
-
-  winner.wallet += totalPot;
-  await winner.save();
+  // 🛠 FIX (Phase 1 / 1.1): atomic $inc for the winner payout
+  await User.updateOne(
+    { userId: winner.userId },
+    { $inc: { wallet: totalPot } }
+  ).catch(err => console.error("dice winner payout failed:", err.message));
 
   await reply(
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
@@ -5511,9 +5876,6 @@ if (command === "claim") {
   const drop = activeDrops.get(chat);
   if (!drop) return reply("No active card drop in this group.");
 
-  // Remove drop immediately
-  activeDrops.delete(chat);
-
   if (!drop.image) return reply("⚠️ This card has no image! Cannot claim.");
 
   const collectionItem = {
@@ -5528,7 +5890,14 @@ if (command === "claim") {
 
   await rewardXP();
 
+  // 🛠 FIX (Phase 1 / 1.3): SAVE FIRST, then delete from activeDrops.
+  // Old order was delete → save — if the bot crashed between the two,
+  // the card was gone from memory but never persisted to the user,
+  // vanishing forever. New order means worst case on crash is that
+  // the card exists in BOTH places (and someone else could also claim
+  // before the next refresh — which is rare and recoverable).
   await user.save();
+  activeDrops.delete(chat);
 
   return reply(
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
@@ -5589,9 +5958,12 @@ if (command === "marry") {
   }
 
   // Store proposal (no money deducted yet)
+  // 🛠 FIX (Phase 1 / 1.2): record chat so the cleanup interval can
+  // notify the chat when the proposal expires (was previously silent).
   marriageProposals.set(proposalKey, {
     proposer: sender,
     target,
+    chat,                          // 🆕 added for expiry notification
     expiresAt: Date.now() + 60000 // 60 seconds to accept
   });
 
@@ -5640,16 +6012,38 @@ if (command === "divorce") {
     return reply(`💔 Divorce costs $${formatMoney(cost)}. Not enough funds.`);
   }
 
-  user.wallet -= cost;
-
+  // 🛠 FIX (Phase 1 / 1.3): charge BOTH spouses the fee. Previously
+  // only the initiator paid $50M, while the spouse kept all marriage-
+  // bonus money received (20% of every gambling win, 50% of after-tax
+  // daily). Combined with .send having no tax, this let a user route
+  // gambling profits to an alt via marriage, then divorce for $50M —
+  // profitable as long as one gambling session yielded > $250M. Now
+  // both sides pay, breaking the alt-routing exploit.
   const spouse = await User.findOne({ userId: spouseId });
-  if (spouse) {
-    spouse.marriage = null;
-    await spouse.save();
+  if (spouse && spouse.wallet < cost) {
+    return reply(`💔 Both spouses must pay $${formatMoney(cost)} for divorce. Your spouse @${spouseId.split("@")[0]} doesn't have enough.`, [spouseId]);
   }
 
-  user.marriage = null;
-  await user.save();
+  // 🛠 FIX (Phase 1 / 1.1): atomic $inc on both — the spouse doc we just
+  // fetched is read-modify-write, which races against any gambling or
+  // .daily the spouse is running in parallel.
+  await User.updateOne(
+    { userId: sender },
+    {
+      $inc: { wallet: -cost },
+      $set: { marriage: null }
+    }
+  ).catch(err => console.error("divorce initiator update failed:", err.message));
+
+  if (spouse) {
+    await User.updateOne(
+      { userId: spouseId },
+      {
+        $inc: { wallet: -cost },
+        $set: { marriage: null }
+      }
+    ).catch(err => console.error("divorce spouse update failed:", err.message));
+  }
 
   return reply(
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
@@ -5659,7 +6053,8 @@ if (command === "divorce") {
 @${sender.split("@")[0]} & @${spouseId.split("@")[0]}
 are no longer married.
 
-💰 Divorce cost: $${formatMoney(cost)}
+💰 Divorce cost: $${formatMoney(cost)} each
+${spouse ? `💵 Total settlement: $${formatMoney(cost * 2)}` : ""}
 
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬`,
     [spouseId]
