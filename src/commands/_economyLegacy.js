@@ -2184,9 +2184,8 @@ async function triggerSpontaneousEvents(sock, chat, isGroup) {
 
     const tierEmoji = { Common: "⚪", Rare: "🔵", Epic: "🟣", Legendary: "🟡", Mythic: "🔴" }[tier.name] || "⚪";
 
-    await sock.sendMessage(chat, {
-      image: { url: card.image },
-      caption:
+    // 🎨 Phase 5.1: Try animated card for airdrop
+    const airdropCaption =
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 *🎴 CARD AIRDROP!*
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬
@@ -2197,9 +2196,33 @@ ${tierEmoji} ${tier.name}
 
 ⚡ First to *.claim* wins!
 
-▬▬▬▬▬▬▬▬▬▬▬▬▬▬`,
-      mentions
-    });
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬`;
+
+    let animSent = false;
+    try {
+      const { generateCardImage } = require("../../utils/cardRenderer");
+      const animBuffer = await generateCardImage(card);
+      if (animBuffer && animBuffer.length > 10000) {
+        await sock.sendMessage(chat, {
+          video: animBuffer,
+          gifPlayback: true,
+          mimetype: "video/mp4",
+          caption: airdropCaption,
+          mentions
+        });
+        animSent = true;
+      }
+    } catch (err) {
+      console.log("Animated airdrop failed, using static:", err.message);
+    }
+
+    if (!animSent) {
+      await sock.sendMessage(chat, {
+        image: { url: card.image },
+        caption: airdropCaption,
+        mentions
+      });
+    }
 
     spontaneousEventCooldown.set(chat, Date.now());
     return;
