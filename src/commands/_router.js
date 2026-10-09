@@ -7,18 +7,27 @@
  * Migration strategy:
  *   - "Migrated" commands are handled by a specific new module under
  *     src/commands/{economy,games,admin}/
- *   - "Legacy" commands fall through to economyLegacy.js (the old
+ *   - "Legacy" commands fall through to _economyLegacy.js (the old
  *     economy.js, kept as a single transitional file)
  *
  * Each phase of migration moves commands from the legacy file into
  * their proper module. When all commands are migrated, the legacy
  * file is deleted.
  *
- * Current migration status:
- *   ✅ Migrated: (none yet — Phase 2.5 will start this)
- *   ⬜ Legacy: ALL economy commands (currently ~70 of them in
- *      commands/economy.js, which is being moved to
- *      src/commands/_economyLegacy.js as a transitional measure)
+ * Current migration status (Phase 2.5):
+ *   ✅ Migrated to src/commands/economy/progression.js:
+ *      .cd, .daily, .work, .beg, .lb, .richest, .profile
+ *   ✅ Migrated to src/commands/economy/money.js:
+ *      .bal, .dep, .wd, .give, .send
+ *   ⬜ Legacy (still in _economyLegacy.js):
+ *      .menu, .help, .about, .assets, .auction, .bid, .loan, .payloan,
+ *      .rob, .casino, .slots, .cf, .roulette, .shop, .dice, .items,
+ *      .heist, .join, .protect, .claim, .col, .view, .burn, .test,
+ *      .tools, .accept, .reject, .kiss, .slap, .fuck, .yeet, .kill,
+ *      .yes, .no, .roll, .buy, .sell, .bail, .marry, .divorce, .spouse,
+ *      .marriageaccept, .marriagereject, .trade, .fuse, .tradeaccept,
+ *      .tradereject, .debug, .ttt, .move, .rps, .throw, .race, .dogbet,
+ *      .pnt, .pntjoin, .afk
  *
  * This file's ONLY job is to dispatch — it doesn't implement any
  * command logic itself.
@@ -41,7 +50,18 @@ const ADMIN_COMMANDS = new Set([
   "gifcheck", "info"
 ]);
 
-// ── Economy commands list ──
+// ── Migrated command sets (Phase 2.5) ──────────────────────────
+// These are checked BEFORE the legacy fallback. If a command is in
+// one of these sets, it's handled by the new module — the legacy
+// file never sees it.
+const progression = require("./economy/progression");
+const money = require("./economy/money");
+
+const MIGRATED_COMMANDS = new Map(); // command → handler module
+for (const cmd of progression.PROGRESSION_COMMANDS) MIGRATED_COMMANDS.set(cmd, progression);
+for (const cmd of money.MONEY_COMMANDS) MIGRATED_COMMANDS.set(cmd, money);
+
+// ── Economy commands list (all commands — for the outer gate) ──
 const ECONOMY_COMMANDS = new Set([
   "menu", "help", "about",
   "profile", "bal", "assets", "lb", "richest", "cd",
@@ -76,8 +96,6 @@ async function route(ctx, opts = {}) {
 
   // ── Admin commands ─────────────────────────────────────────
   if (ADMIN_COMMANDS.has(command)) {
-    // The old admin.js requires the outer gate check + target detection.
-    // The router handles gate; admin module handles target detection.
     if (!isBotOwner && !isGroupAdmin) {
       await ctx.reply("🚫 *ADMIN ACCESS DENIED*\n\n💡 Group-admin commands need WhatsApp admin rights. Bot-wide commands (ban, freeze, etc.) need owner rights.");
       return true;
@@ -85,18 +103,24 @@ async function route(ctx, opts = {}) {
     const handleAdmin = require("./admin");
     await handleAdmin({
       ...ctx,
-      // admin.js expects these on the context:
       groupMetadata: opts.adminMetadata || opts.groupMetadata,
     });
     return true;
   }
 
-  // ── Economy commands (currently all legacy) ───────────────
+  // ── Migrated economy commands (Phase 2.5) ─────────────────
+  // Check these FIRST — if the command has been migrated to a new
+  // module, handle it there and skip the legacy file entirely.
+  const migratedModule = MIGRATED_COMMANDS.get(command);
+  if (migratedModule) {
+    const handled = await migratedModule.handle(ctx);
+    if (handled !== false) return true;
+    // If the module returned false (e.g. default case in switch),
+    // fall through to legacy as a safety net.
+  }
+
+  // ── Legacy economy commands (not yet migrated) ─────────────
   if (ECONOMY_COMMANDS.has(command)) {
-    // 🛠 Phase 2.5 transitional: load the legacy economy handler.
-    // This is the original economy.js, just relocated. When commands
-    // are migrated out, they'll be intercepted here BEFORE falling
-    // through to legacy.
     const handleEconomy = require("./_economyLegacy");
     await handleEconomy(ctx);
     return true;
@@ -109,4 +133,5 @@ module.exports = {
   route,
   ADMIN_COMMANDS,
   ECONOMY_COMMANDS,
+  MIGRATED_COMMANDS,
 };
