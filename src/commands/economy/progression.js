@@ -233,17 +233,20 @@ ${job} and earned:
 
       const medals = ["👑", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
 
-      let text = `▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n*🏆 TOP 10 RICHEST*\n▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n\n▬▬▬▬▬▬▬▬▬▬▬▬▬▬`;
+      // 🛠 FIX (Phase 3.5): no @mentions — just plain names. Tagging
+      // leaderboard members was annoying them every time someone
+      // checked .lb. Now shows names as plain text.
+      let text = `▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n*🏆 TOP 10 RICHEST*\n▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n`;
 
       sorted.forEach((u, i) => {
         const medal = medals[i] || `${i + 1}.`;
         const name = u.userId.split("@")[0];
-        text += `\n${medal} @${name}\n   💎 $${formatShort(u.net)}\n`;
+        text += `\n${medal} ${name}\n   💎 $${formatShort(u.net)}\n`;
       });
 
-      text += `\n`;
+      text += `\n▬▬▬▬▬▬▬▬▬▬▬▬▬▬`;
 
-      return reply(text, sorted.map(u => u.userId));
+      return reply(text);
     }
 
     // =====================================================

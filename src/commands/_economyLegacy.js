@@ -36,29 +36,42 @@ const {
 let ffmpegAvailable = false;
 let ffmpegConvert = null;
 let ffmpegResolvedPath = null;
+
+// 🛠 FIX (Phase 3.5): try ffmpeg-static first, then fall back to system
+// ffmpeg (which is available on this host at /usr/bin/ffmpeg). The old
+// code only tried ffmpeg-static — if its postinstall script was blocked,
+// ALL reactions fell back to static images with no clear signal why.
 try {
   const ffmpegPath = require("ffmpeg-static");
-  // 🛠 IMPORTANT: require() succeeding only proves the JS wrapper is
-  // installed — ffmpeg-static's ACTUAL binary is downloaded by a
-  // postinstall script during `npm install`, which some locked-down
-  // hosting containers block for security. If that happened, this
-  // path points at a file that doesn't exist, and every conversion
-  // would silently fail later (falling back to static images) with
-  // no clear signal why. Checking existsSync catches that case here,
-  // immediately, with a clear log line instead of a mystery.
-  if (!ffmpegPath || !fs.existsSync(ffmpegPath)) {
-    throw new Error(`ffmpeg binary not found on disk at: ${ffmpegPath}. Your host may be blocking npm postinstall scripts.`);
+  if (ffmpegPath && fs.existsSync(ffmpegPath)) {
+    ffmpegResolvedPath = ffmpegPath;
+    ffmpegConvert = require("fluent-ffmpeg");
+    ffmpegConvert.setFfmpegPath(ffmpegPath);
+    ffmpegAvailable = true;
+    console.log(`✅ ffmpeg ready (ffmpeg-static) at ${ffmpegPath} — GIF reactions will animate.`);
+  } else {
+    throw new Error("ffmpeg-static binary not found on disk");
   }
-  ffmpegResolvedPath = ffmpegPath;
-  ffmpegConvert = require("fluent-ffmpeg");
-  ffmpegConvert.setFfmpegPath(ffmpegPath);
-  ffmpegAvailable = true;
-  console.log(`✅ ffmpeg ready at ${ffmpegPath} — GIF reactions will animate.`);
-} catch (err) {
-  console.warn(
-    "⚠️ ffmpeg unavailable — GIF reactions will fall back to static " +
-    `images instead of animating. Reason: ${err.message}`
-  );
+} catch (err1) {
+  // Try system ffmpeg
+  try {
+    const { execSync } = require("child_process");
+    const sysPath = execSync("which ffmpeg", { encoding: "utf-8" }).trim();
+    if (sysPath && fs.existsSync(sysPath)) {
+      ffmpegResolvedPath = sysPath;
+      ffmpegConvert = require("fluent-ffmpeg");
+      ffmpegConvert.setFfmpegPath(sysPath);
+      ffmpegAvailable = true;
+      console.log(`✅ ffmpeg ready (system) at ${sysPath} — GIF reactions will animate.`);
+    } else {
+      throw new Error("system ffmpeg not found in PATH");
+    }
+  } catch (err2) {
+    console.warn(
+      "⚠️ ffmpeg unavailable — GIF reactions will fall back to static " +
+      `images. ffmpeg-static: ${err1.message}; system: ${err2.message}`
+    );
+  }
 }
 
 if (!global._gifMp4Cache) global._gifMp4Cache = new Map(); // gif URL -> mp4 Buffer

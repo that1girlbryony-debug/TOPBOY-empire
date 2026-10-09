@@ -1,5 +1,5 @@
 /**
- * 🛠 src/commands/economy/gamble.js — Phase 2.5 batch 2
+ * 🛠 src/commands/economy/gamble.js — Phase 2.5 batch 2 + Phase 3.5 visual upgrade
  *
  * Migrated from _economyLegacy.js:
  *   .casino   — 45% win chance at x2 payout (house edge ~10%)
@@ -7,19 +7,24 @@
  *   .cf       — coin flip: true 50/50, x2 payout (fair game, 0% edge)
  *   .roulette — single-number x35, color x2/x35, even/odd x2
  *
- * All 4 commands use:
- *   - handleCooldown (per-command cooldown from config.cooldowns)
- *   - checkGambleLimit (20 plays/day per command)
- *   - shareGamblingWin (spouse gets 20% of profit)
- *   - createRewardXP (XP rewards)
- *   - global._guaranteedWin (secret cheatcode — owner-only, undocumented)
+ * 🎨 Phase 3.5 VISUAL UPGRADE:
+ *   - Replaced text "Spinning..." + 2s delay with actual animated MP4s
+ *     generated server-side via lib/animator.js (canvas → GIF → MP4)
+ *   - Sends as WhatsApp video with gifPlayback:true so they animate
+ *   - Falls back to old text approach if animator unavailable
  *
- * NOT migrated here (kept in legacy — shared-state games):
- *   .dice — head-to-head challenge (.accept/.reject/.roll), uses activeDiceGames
+ * Dependencies (via _shared.js):
+ *   - handleCooldown, checkGambleLimit, shareGamblingWin, createRewardXP
+ *
+ * Also uses:
+ *   - lib/animator.js (canvas-based animation engine)
+ *   - User model
+ *   - helpers: formatMoney, randomInt
  */
 
 const User = require("../../models/User");
 const { formatMoney, formatShort, randomInt } = require("../../utils/helpers");
+const animator = require("../../lib/animator");
 const {
   handleCooldown,
   checkGambleLimit,
@@ -28,6 +33,30 @@ const {
 } = require("./_shared");
 
 const GAMBLE_COMMANDS = new Set(["casino", "slots", "cf", "roulette"]);
+
+/**
+ * Helper: send an animation. Returns true if animation was sent.
+ * Falls back to the old text-based approach if animator isn't ready.
+ */
+async function sendAnimation(sock, chat, mp4Buffer, fallbackText, msg) {
+  if (mp4Buffer) {
+    try {
+      await sock.sendMessage(chat, {
+        video: mp4Buffer,
+        gifPlayback: true,
+        mimetype: "video/mp4",
+        caption: fallbackText,
+      }, { quoted: msg });
+      return true;
+    } catch (err) {
+      console.error("[animator] send failed, falling back to text:", err.message);
+    }
+  }
+  // Fallback: old text approach
+  await sock.sendMessage(chat, { text: fallbackText }, { quoted: msg });
+  await new Promise(r => setTimeout(r, 1500));
+  return false;
+}
 
 async function handle(ctx) {
   const { command, args, user, sender, reply, msg } = ctx;
@@ -64,6 +93,9 @@ async function handle(ctx) {
 
       const rewardXP = createRewardXP({ user, command });
 
+      // 🎨 Phase 3.5: Generate animated casino wheel
+      const animMp4 = await animator.animateCasino(win, amtCasino, 2, win ? amtCasino : amtCasino);
+
       if (win) {
         const multiplier = 2;
         const totalReturn = amtCasino * multiplier;
@@ -76,9 +108,8 @@ async function handle(ctx) {
         user.wallet -= spouseCut;
 
         await user.save();
-        await reply("🎰 *Spinning the wheel...*");
-        await new Promise(r => setTimeout(r, 2000));
 
+        // 🎨 Send animated result
         let winText =
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 *🎰 CASINO*
@@ -97,13 +128,16 @@ async function handle(ctx) {
         }
 
         winText += `\n`;
-        return reply(winText);
+
+        // Send animation with caption, or fallback to text
+        const { sock, chat } = ctx;
+        await sendAnimation(sock, chat, animMp4, winText, msg);
+        return;
       } else {
         user.wallet -= amtCasino;
         await user.save();
-        await reply("🎰 *Spinning the wheel...*");
-        await new Promise(r => setTimeout(r, 2000));
-        return reply(
+
+        const loseText =
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 *🎰 CASINO*
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬
@@ -114,8 +148,11 @@ async function handle(ctx) {
 💀 *You lost it all...*
 📉 -$${formatMoney(amtCasino)}
 
-▬▬▬▬▬▬▬▬▬▬▬▬▬▬`
-        );
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬`;
+
+        const { sock, chat } = ctx;
+        await sendAnimation(sock, chat, animMp4, loseText, msg);
+        return;
       }
     }
 
@@ -205,10 +242,10 @@ async function handle(ctx) {
       await rewardXP();
       await user.save();
 
-      await reply("🎰 *Reels spinning...*");
-      await new Promise(r => setTimeout(r, 2000));
+      // 🎨 Phase 3.5: Generate animated slot reels
+      const animMp4 = await animator.animateSlots(roll, multiplier, bet, winAmount);
 
-      let winText = `▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n*🎰 SLOT MACHINE*\n▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n\n▬▬▬▬▬▬▬▬▬▬▬▬▬▬`;
+      let winText = `▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n*🎰 SLOT MACHINE*\n▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n`;
       winText += `\n  [ ${roll.join(" | ")} ]\n\n`;
       winText += `🎯 ${limit.remaining} plays left\n\n`;
 
@@ -223,7 +260,10 @@ async function handle(ctx) {
       }
 
       winText += `\n`;
-      return reply(winText);
+
+      const { sock, chat } = ctx;
+      await sendAnimation(sock, chat, animMp4, winText, msg);
+      return;
     }
 
     // =====================================================
@@ -261,6 +301,9 @@ async function handle(ctx) {
       const win = side === result;
       const rewardXP = createRewardXP({ user, command });
 
+      // 🎨 Phase 3.5: Generate animated coin flip
+      const animMp4 = await animator.animateCoinFlip(result, side, win, amtCF);
+
       if (win) {
         const totalShown = amtCF * 2;
         const profit = amtCF;
@@ -289,12 +332,14 @@ async function handle(ctx) {
         if (spouseCut > 0) winText += `\n💍 Spouse got: $${formatMoney(spouseCut)}`;
 
         winText += `\n`;
-        return reply(winText);
+        const { sock, chat } = ctx;
+        await sendAnimation(sock, chat, animMp4, winText, msg);
+        return;
       } else {
         user.wallet -= amtCF;
         await user.save();
 
-        return reply(
+        const loseText =
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 *🪙 COIN FLIP*
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬
@@ -307,8 +352,11 @@ async function handle(ctx) {
 💀 *LOST*
 📉 -$${formatMoney(amtCF)}
 
-▬▬▬▬▬▬▬▬▬▬▬▬▬▬`
-        );
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬`;
+
+        const { sock, chat } = ctx;
+        await sendAnimation(sock, chat, animMp4, loseText, msg);
+        return;
       }
     }
 
@@ -382,6 +430,9 @@ async function handle(ctx) {
 
       const rewardXP = createRewardXP({ user, command });
 
+      // 🎨 Phase 3.5: Generate animated roulette wheel
+      const animMp4 = await animator.animateRoulette(number, color, multiplier, choiceRaw);
+
       if (multiplier > 0) {
         const totalReturn = amount * multiplier;
         const profit = totalReturn - amount;
@@ -409,12 +460,14 @@ async function handle(ctx) {
         if (spouseCut > 0) winText += `\n💍 Spouse got: $${formatMoney(spouseCut)}`;
 
         winText += `\n`;
-        return reply(winText);
+        const { sock, chat } = ctx;
+        await sendAnimation(sock, chat, animMp4, winText, msg);
+        return;
       } else {
         user.wallet -= amount;
         await user.save();
 
-        return reply(
+        const loseText =
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 *🎡 ROULETTE*
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬
@@ -427,8 +480,11 @@ async function handle(ctx) {
 💀 *LOST*
 📉 -$${formatMoney(amount)}
 
-▬▬▬▬▬▬▬▬▬▬▬▬▬▬`
-        );
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬`;
+
+        const { sock, chat } = ctx;
+        await sendAnimation(sock, chat, animMp4, loseText, msg);
+        return;
       }
     }
 
