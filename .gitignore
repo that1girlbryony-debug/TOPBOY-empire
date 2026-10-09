@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Baileys auth state (contains pairing keys)
+auth/
+auth_info_baileys/
+*.session
+*.session-journal
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Runtime data
+data/uploads/
+tmp/
