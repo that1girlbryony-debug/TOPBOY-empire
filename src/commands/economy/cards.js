@@ -96,7 +96,7 @@ async function handle(ctx) {
     }
 
     // =====================================================
-    // 👁 VIEW CARD (WITH RENDERED CARD IMAGE)
+    // 👁 VIEW CARD (WITH ANIMATED CARD REVEAL)
     // =====================================================
     case "view": {
       const index = parseInt(args[0]) - 1;
@@ -112,15 +112,7 @@ async function handle(ctx) {
 
       const tierEmoji = TIER_EMOJI[card.tier] || "⚪";
 
-      // Try rendering a styled card image
-      try {
-        const { generateCardImage } = require("../../utils/cardRenderer");
-        const renderedBuffer = await generateCardImage(card);
-
-        if (renderedBuffer) {
-          await sock.sendMessage(chat, {
-            image: renderedBuffer,
-            caption:
+      const caption =
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 *🎴 CARD DETAILS*
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬
@@ -130,8 +122,33 @@ ${tierEmoji} ${card.tier}
 💰 $${formatMoney(card.worth)}
 
 
-▬▬▬▬▬▬▬▬▬▬▬▬▬▬`
-          }, { quoted: msg });
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬`;
+
+      // 🎨 Phase 5.1: Try animated card reveal (canvas → MP4)
+      try {
+        const { generateCardImage } = require("../../utils/cardRenderer");
+        const renderedBuffer = await generateCardImage(card);
+
+        if (renderedBuffer && renderedBuffer.length > 0) {
+          // Check if it's a video (MP4) or image (PNG)
+          const isVideo = renderedBuffer[0] === 0x00 && renderedBuffer[1] === 0x00 &&
+                         renderedBuffer[2] === 0x00 && renderedBuffer[3] === 0x20; // MP4 magic
+
+          if (isVideo || renderedBuffer.length > 10000) {
+            // Animated card — send as video with gifPlayback
+            await sock.sendMessage(chat, {
+              video: renderedBuffer,
+              gifPlayback: true,
+              mimetype: "video/mp4",
+              caption,
+            }, { quoted: msg });
+          } else {
+            // Static image (Jimp fallback)
+            await sock.sendMessage(chat, {
+              image: renderedBuffer,
+              caption,
+            }, { quoted: msg });
+          }
           return;
         }
       } catch (err) {
@@ -141,17 +158,7 @@ ${tierEmoji} ${card.tier}
       // Fallback: original image URL
       await sock.sendMessage(chat, {
         image: { url: card.image },
-        caption:
-`▬▬▬▬▬▬▬▬▬▬▬▬▬▬
-*🎴 CARD DETAILS*
-▬▬▬▬▬▬▬▬▬▬▬▬▬▬
-
-🃏 ${card.name}
-${tierEmoji} ${card.tier}
-💰 $${formatMoney(card.worth)}
-
-
-▬▬▬▬▬▬▬▬▬▬▬▬▬▬`
+        caption,
       }, { quoted: msg });
       return;
     }
