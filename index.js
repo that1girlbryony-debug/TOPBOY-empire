@@ -323,45 +323,55 @@ async function startBot() {
             // ================= ANTIDEMOTE (ALWAYS ACTIVE — ignores disable state) =================
             if (action === "demote") {
                 const ownerNumbers = config.ownerNumbers.map(o => normalizeJid(o));
+                const botNorm = normalizeJid(config.botLid);
 
                 for (const participant of participants) {
                     const participantNorm = normalizeJid(participant);
 
-                    if (ownerNumbers.includes(participantNorm)) {
-                        let botIsAdmin = false;
-                        try {
-                            const metadata = await sock.groupMetadata(chat);
-                            const botNorm = normalizeJid(config.botLid);
-                            const botParticipant = metadata.participants.find(
-                                p => normalizeJid(p.id) === botNorm
-                            );
-                            botIsAdmin =
-                                botParticipant?.admin === "admin" ||
-                                botParticipant?.admin === "superadmin";
-                        } catch {}
+                    // 🛠 FIX (Phase 1 / 1.4): protect the BOT itself, not just owners.
+                    // Without this, a group admin (or anyone WhatsApp allows to demote)
+                    // could strip the bot's admin rights, silently breaking ALL
+                    // admin-requiring commands in that group (kick, mute, promote,
+                    // demote, antilink-removal, votekick-execution) — with no auto-recovery.
+                    const isOwner = ownerNumbers.includes(participantNorm);
+                    const isBotSelf = participantNorm === botNorm;
 
-                        if (!botIsAdmin) continue;
+                    if (!isOwner && !isBotSelf) continue;
 
-                        await sock.sendMessage(chat, {
-                            text:
+                    let botIsAdmin = false;
+                    try {
+                        const metadata = await sock.groupMetadata(chat);
+                        const botParticipant = metadata.participants.find(
+                            p => normalizeJid(p.id) === botNorm
+                        );
+                        botIsAdmin =
+                            botParticipant?.admin === "admin" ||
+                            botParticipant?.admin === "superadmin";
+                    } catch {}
+
+                    if (!botIsAdmin) continue;
+
+                    const protectionLabel = isBotSelf ? "the bot" : "owner";
+
+                    await sock.sendMessage(chat, {
+                        text:
 `🚨 *INTRUDER ALERT!* 🚨
 
-⚠️ @${author.split("@")[0]} tried to demote @${participant.split("@")[0]}!
+⚠️ @${author.split("@")[0]} tried to demote @${participant.split("@")[0]} (${protectionLabel})!
 Intruder has been removed.
 
-👑 Restoring owner privileges...
+👑 Restoring ${protectionLabel} privileges...
 `,
-                            mentions: [author, participant]
-                        });
+                        mentions: [author, participant]
+                    });
 
-                        try {
-                            await sock.groupParticipantsUpdate(chat, [author], "remove");
-                        } catch {}
+                    try {
+                        await sock.groupParticipantsUpdate(chat, [author], "remove");
+                    } catch {}
 
-                        try {
-                            await sock.groupParticipantsUpdate(chat, [participant], "promote");
-                        } catch {}
-                    }
+                    try {
+                        await sock.groupParticipantsUpdate(chat, [participant], "promote");
+                    } catch {}
                 }
             }
 
@@ -500,10 +510,28 @@ Intruder has been removed.
                 }
             }
 
-            const text =
-                msg.message.conversation ||
-                msg.message.extendedTextMessage?.text ||
-                "";
+            // 🛠 FIX (Phase 1 / 1.4): expand text extraction to cover all
+            // caption-bearing message types and quoted messages. The old
+            // extraction only read conversation + extendedTextMessage.text,
+            // which meant antilink (and AFK auto-clear, mini-game answers,
+            // etc.) was trivially bypassed by attaching a link as an image
+            // caption or quoting a message containing the link.
+            const m = msg.message || {};
+            const ctx = m.extendedTextMessage?.contextInfo || {};
+            const quotedTexts = [];
+            if (ctx.quotedMessage) {
+                if (ctx.quotedMessage.conversation) quotedTexts.push(ctx.quotedMessage.conversation);
+                if (ctx.quotedMessage.extendedTextMessage?.text) quotedTexts.push(ctx.quotedMessage.extendedTextMessage.text);
+                if (ctx.quotedMessage.imageMessage?.caption) quotedTexts.push(ctx.quotedMessage.imageMessage.caption);
+                if (ctx.quotedMessage.videoMessage?.caption) quotedTexts.push(ctx.quotedMessage.videoMessage.caption);
+            }
+            const text = (
+                m.conversation ||
+                m.extendedTextMessage?.text ||
+                m.imageMessage?.caption ||
+                m.videoMessage?.caption ||
+                ""
+            ) + (quotedTexts.length ? "\n" + quotedTexts.join("\n") : "");
 
             // ================= ENHANCED BAN SYSTEM =================
             // 🛠 FIX: this used to block/delete on `banned === true` alone,
@@ -589,7 +617,16 @@ Intruder has been removed.
             }
 
             // ================= ANTILINK ENFORCEMENT (ALWAYS ACTIVE — ignores disable state) =================
-            if (isGroup && text.includes("chat.whatsapp.com")) {
+            // 🛠 FIX (Phase 1 / 1.4): was a single `text.includes("chat.whatsapp.com")`
+            // substring check — trivially bypassed by:
+            //   - image/video captions with the link (now caught by expanded text extraction)
+            //   - quoted messages containing the link (now caught too)
+            //   - wa.me/ deep links (now caught by regex)
+            //   - whatsapp.com/channel/ community links (now caught by regex)
+            // Regex is case-insensitive and matches both http:// and https:// variants
+            // (and the bare-domain form without a scheme).
+            const WHATSAPP_LINK_RE = /(https?:\/\/)?(www\.)?(chat\.whatsapp\.com|wa\.me\/|whatsapp\.com\/(?:channel|invite|\/))[a-z0-9]/i;
+            if (isGroup && WHATSAPP_LINK_RE.test(text)) {
                 const groupData = await User.findOne({ userId: chat });
 
                 if (groupData?.antilink) {
@@ -653,6 +690,15 @@ Intruder has been removed.
                     if (Date.now() < active.expiresAt) {
                         const userAnswer = text.trim().toLowerCase();
                         const currentQ = active.questions[active.currentIndex];
+
+                        // 🛠 FIX (Phase 1 / 1.3): gate per-question — without
+                        // this, a user could spam "A B C D" and one of them
+                        // was guaranteed correct, scoring on every question
+                        // and winning $50M every time. Now they get one
+                        // answer per question, just like single trivia.
+                        const answeredSet = active.answeredByQ?.[active.currentIndex];
+                        if (answeredSet && answeredSet.has(sender)) return;
+                        if (answeredSet) answeredSet.add(sender);
 
                         const isCorrect =
                             userAnswer === currentQ.correctAnswer ||
@@ -889,7 +935,17 @@ All commands are now active here.
                     const adder = global._groupAdders?.get(chat);
                     if (adder) {
                         try {
-                            await User.updateOne(
+                            // 🛠 FIX (Phase 1 / 1.4): use User.collection.updateOne
+                            // (raw MongoDB driver) instead of User.updateOne (Mongoose).
+                            // Mongoose's strict mode silently strips fields not in the
+                            // schema — banReason, bannedBy, bannedAt aren't declared
+                            // (they're set via raw driver in admin.js .ban for the same
+                            // reason). So this auto-ban path was writing `banned: true`
+                            // + `banUntil: null` but DROPPING the reason/by/at fields,
+                            // corrupting the moderation audit trail. The .info command
+                            // would later show "No reason recorded" instead of
+                            // "Added the bot to an unauthorized group".
+                            await User.collection.updateOne(
                                 { userId: adder },
                                 {
                                     $set: {
