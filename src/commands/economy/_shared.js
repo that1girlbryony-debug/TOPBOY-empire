@@ -89,6 +89,9 @@ module.exports = {
   canFireInGroup: legacy.canFireInGroup,
   canDropInGroup: legacy.canDropInGroup,
 
+  // ── Gambling helper ────────────────────────────────────────
+  shareGamblingWin: legacy.shareGamblingWin,
+
   // ── Reward XP factory ──────────────────────────────────────
   createRewardXP,
 };
