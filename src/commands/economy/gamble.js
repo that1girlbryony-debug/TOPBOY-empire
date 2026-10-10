@@ -93,8 +93,9 @@ async function handle(ctx) {
 
       const rewardXP = createRewardXP({ user, command });
 
-      // 🎨 Phase 3.5: Generate animated casino wheel
-      const animMp4 = await animator.animateCasino(win, amtCasino, 2, win ? amtCasino : amtCasino);
+      // 🎨 Task 18: premium fortune wheel (cached by outcome — repeat
+      // plays send instantly; amounts stay in the caption, not the video)
+      const animMp4 = await animator.animateCasino(win);
 
       if (win) {
         const multiplier = 2;
@@ -242,8 +243,8 @@ async function handle(ctx) {
       await rewardXP();
       await user.save();
 
-      // 🎨 Phase 3.5: Generate animated slot reels
-      const animMp4 = await animator.animateSlots(roll, multiplier, bet, winAmount);
+      // 🎨 Task 18: real reel-strip slot machine (cached by reels+multiplier)
+      const animMp4 = await animator.animateSlots(roll, multiplier);
 
       let winText = `▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n*🎰 SLOT MACHINE*\n▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n`;
       winText += `\n  [ ${roll.join(" | ")} ]\n\n`;
@@ -301,8 +302,8 @@ async function handle(ctx) {
       const win = side === result;
       const rewardXP = createRewardXP({ user, command });
 
-      // 🎨 Phase 3.5: Generate animated coin flip
-      const animMp4 = await animator.animateCoinFlip(result, side, win, amtCF);
+      // 🎨 Task 18: tossed gold coin — arc, spin, bounce (cached by result)
+      const animMp4 = await animator.animateCoinFlip(result, win);
 
       if (win) {
         const totalShown = amtCF * 2;
@@ -430,8 +431,8 @@ async function handle(ctx) {
 
       const rewardXP = createRewardXP({ user, command });
 
-      // 🎨 Phase 3.5: Generate animated roulette wheel
-      const animMp4 = await animator.animateRoulette(number, color, multiplier, choiceRaw);
+      // 🎨 Task 18: European roulette wheel, ball spiral + pocket settle
+      const animMp4 = await animator.animateRoulette(number, color, multiplier);
 
       if (multiplier > 0) {
         const totalReturn = amount * multiplier;

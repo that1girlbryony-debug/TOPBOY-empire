@@ -30,6 +30,7 @@ const User = require("../../models/User");
 const { formatMoney, randomInt } = require("../../../utils/helpers");
 const legacy = require("../_economyLegacy");
 const { handleCooldown, createRewardXP } = require("./_shared");
+const animator = require("../../lib/animator");
 
 const GAME_COMMANDS = new Set([
   "ttt", "move", "rps", "throw", "race", "dogbet",
@@ -241,7 +242,16 @@ Type *.roll*
       const roll = randomInt(1, 6);
       game.rolls[sender] = roll;
 
-      await reply(`🎲 @${sender.split("@")[0]} rolled ${roll}`, [sender]);
+      // 🎨 Task 18: 3D dice tumble (cached per value)
+      let rollAnim = null;
+      try {
+        rollAnim = await animator.animateDice(roll);
+      } catch (e) { console.log("dice anim failed:", e.message); }
+      await animator.sendAnimated(
+        sock, chat, rollAnim,
+        `🎲 @${sender.split("@")[0]} rolled ${roll}`,
+        msg, [sender]
+      );
 
       // Switch turn
       if (sender === game.player1) {
@@ -285,7 +295,13 @@ Type .roll
 
         legacy.activeDiceGames.delete(chat);
 
-        return reply(
+        // 🎨 Task 18: dice duel final (cached per pair+outcome)
+        let tieAnim = null;
+        try {
+          tieAnim = await animator.animateDiceDuel(roll1, roll2, "tie");
+        } catch (e) { console.log("dice anim failed:", e.message); }
+
+        return animator.sendAnimated(sock, chat, tieAnim,
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 *🎲 FINAL RESULT*
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬
@@ -296,7 +312,7 @@ Type .roll
 🤝 *TIE!* Stakes refunded.
 
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬`,
-          [game.player1, game.player2]
+          msg, [game.player1, game.player2]
         );
       }
 
@@ -306,7 +322,16 @@ Type .roll
         { $inc: { wallet: totalPot } }
       ).catch(err => console.error("dice winner payout failed:", err.message));
 
-      await reply(
+      legacy.activeDiceGames.delete(chat);
+
+      // 🎨 Task 18: dice duel final with winner glow
+      const duelOutcome = roll1 === roll2 ? "tie" : roll1 > roll2 ? "p1" : "p2";
+      let duelAnim = null;
+      try {
+        duelAnim = await animator.animateDiceDuel(roll1, roll2, duelOutcome);
+      } catch (e) { console.log("dice anim failed:", e.message); }
+
+      return animator.sendAnimated(sock, chat, duelAnim,
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 *🎲 FINAL RESULT*
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬
@@ -317,11 +342,8 @@ Type .roll
 🏆 @${winner.userId.split("@")[0]} won $${formatMoney(totalPot)}!
 
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬`,
-        [game.player1, game.player2]
+        msg, [game.player1, game.player2]
       );
-
-      legacy.activeDiceGames.delete(chat);
-      return;
     }
 
     // =====================================================

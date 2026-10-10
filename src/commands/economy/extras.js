@@ -20,6 +20,7 @@
 const User = require("../../models/User");
 const { formatMoney, formatShort, randomInt, cleanId, calculateNetWorth } = require("../../../utils/helpers");
 const { handleCooldown, createRewardXP, getNigeriaDate } = require("./_shared");
+const animator = require("../../lib/animator");
 
 const EXTRAS_COMMANDS = new Set([
   "lottery", "achievements", "quest", "quote", "topcards", "inventory", "blackjack"
@@ -372,7 +373,16 @@ ${quote}
         await rewardXP();
         await user.save();
 
-        return reply(
+        // 🎨 Task 18: dealing animation on felt (cached per hand+outcome)
+        let animMp4 = null;
+        try {
+          animMp4 = await animator.animateBlackjack({
+            player: playerHand, dealer: dealerHand,
+            playerTotal, dealerTotal, outcome: "blackjack",
+          });
+        } catch (e) { console.log("blackjack anim failed:", e.message); }
+
+        return animator.sendAnimated(sock, chat, animMp4,
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 *🃏 BLACKJACK!*
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬
@@ -385,8 +395,7 @@ Dealer: ${renderHand(dealerHand)} (${dealerTotal})
 💰 Won: $${formatMoney(payout - bet)}
 💵 (3:2 payout)
 
-▬▬▬▬▬▬▬▬▬▬▬▬▬▬`
-        );
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬`, msg);
       }
 
       // Hit until 17 (simplified — no hit/stand interaction)
@@ -405,7 +414,16 @@ Dealer: ${renderHand(dealerHand)} (${dealerTotal})
         user.wallet -= bet;
         await user.save();
 
-        return reply(
+        let animMp4 = null;
+        try {
+          animMp4 = await animator.animateBlackjack({
+            player: currentHand, dealer: dealerHand,
+            playerTotal: currentTotal, dealerTotal,
+            outcome: "bust",
+          });
+        } catch (e) { console.log("blackjack anim failed:", e.message); }
+
+        return animator.sendAnimated(sock, chat, animMp4,
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 *🃏 BLACKJACK — BUST!*
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬
@@ -415,8 +433,7 @@ Your hand: ${renderHand(currentHand)} (${currentTotal})
 
 📉 Lost: $${formatMoney(bet)}
 
-▬▬▬▬▬▬▬▬▬▬▬▬▬▬`
-        );
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬`, msg);
       }
 
       // Dealer plays (hit until ≥ 17)
@@ -453,7 +470,17 @@ Your hand: ${renderHand(currentHand)} (${currentTotal})
 
       await user.save();
 
-      return reply(
+      const bjOutcome = push ? "push" : playerWins ? "win" : "lose";
+      let animMp4 = null;
+      try {
+        animMp4 = await animator.animateBlackjack({
+          player: currentHand, dealer: dealerCurrent,
+          playerTotal: currentTotal, dealerTotal: dealerCurrentTotal,
+          outcome: bjOutcome,
+        });
+      } catch (e) { console.log("blackjack anim failed:", e.message); }
+
+      return animator.sendAnimated(sock, chat, animMp4,
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 *🃏 BLACKJACK*
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬
@@ -465,8 +492,7 @@ ${dealerBust ? "💀 Dealer busted!\n" : ""}${resultText}
 
 💰 Bet: $${formatMoney(bet)}
 
-▬▬▬▬▬▬▬▬▬▬▬▬▬▬`
-      );
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬`, msg);
     }
 
     default:
