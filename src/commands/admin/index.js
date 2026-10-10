@@ -5,6 +5,8 @@ const config = require("../../config");
 const animeCards = require("../../data/animeCards");
 const axios = require("axios");
 const { formatMoney, cleanId, normalizeJid } = require("../../utils/helpers");
+// 🆕 v6.2: Use LID-aware auth from src/lib/auth.js
+const { isOwnerJid: isOwnerJidLib, isGroupAdminIn: isGroupAdminInLib, isBotAdminIn: isBotAdminInLib } = require("../../lib/auth");
 
 // Readable duration for cooldown messages (e.g. "9h 42m" instead of "34920s")
 function formatCooldown(ms) {
@@ -61,12 +63,9 @@ module.exports = async (context) => {
 
     const senderId = sender.split("@")[0];
     const isGroup = chat.endsWith("@g.us");
-    const isBotOwner = config.ownerNumbers.some(owner => owner.split("@")[0] === senderId);
-    // 🛠 FIX (Phase 1 / 1.4): helper to check if ANY target JID is a bot
-    // owner. Used by votekick/warn/kick to prevent group-admin actions
-    // against the bot owner (who may not be a group admin in every chat).
-    const isOwnerTarget = (jid) =>
-        config.ownerNumbers.some(owner => owner.split("@")[0] === jid.split("@")[0]);
+    // 🆕 v6.2: Use LID-aware isOwnerJid from lib/auth.js
+    const isBotOwner = isOwnerJidLib(sender);
+    const isOwnerTarget = isOwnerJidLib; // reuse for target checks
 
     let isGroupAdmin = false;
     let botIsAdmin = false;
@@ -78,24 +77,9 @@ module.exports = async (context) => {
         try {
             const metadata = groupMetadata || await sock.groupMetadata(chat);
 
-            // Sender admin check — normalize JIDs for @lid compatibility
-            const senderNorm = normalizeJid(sender);
-            const participant = metadata.participants.find(
-                p => normalizeJid(p.id) === senderNorm
-            );
-            if (participant?.admin === "admin" || participant?.admin === "superadmin") {
-                isGroupAdmin = true;
-            }
-
-            // Bot admin check — use hardcoded bot LID from config
-            const botNorm = normalizeJid(config.botLid);
-            const botParticipant = metadata.participants.find(
-                p => normalizeJid(p.id) === botNorm
-            );
-
-            if (botParticipant?.admin === "admin" || botParticipant?.admin === "superadmin") {
-                botIsAdmin = true;
-            }
+            // 🆕 v6.2: Use LID-aware admin checks from lib/auth.js
+            isGroupAdmin = isGroupAdminInLib(sender, metadata);
+            botIsAdmin = isBotAdminInLib(metadata);
 
         } catch (err) {
             console.log("Admin detection error:", err.message);
