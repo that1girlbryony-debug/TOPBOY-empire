@@ -196,7 +196,7 @@ async function framesToMp4(frames, width, height, delayMs = 80) {
     ];
 
     await new Promise((resolve, reject) => {
-      execFile("ffmpeg", args, { timeout: 30000 }, (err, stdout, stderr) => {
+      execFile(require("ffmpeg-static"), args, { timeout: 30000 }, (err, stdout, stderr) => {
         if (err) reject(new Error(stderr ? stderr.substring(0, 200) : err.message));
         else resolve();
       });
@@ -419,20 +419,23 @@ function drawCardFront(ctx, W, H, design, card, charImg, frame, totalFrames, par
   ctx.clip();
 
   if (charImg) {
-    // Draw character image, cover-style
+    // 🛠 FIX: Use "contain" style instead of "cover" so the full image is visible
+    // (was cutting off the character's head/feet)
     const imgAspect = charImg.width / charImg.height;
     const boxAspect = imgW / imgH;
     let dw, dh, dx, dy;
-    if (imgAspect > boxAspect) {
-      dh = imgH;
-      dw = dh * imgAspect;
-      dx = imgX - (dw - imgW) / 2;
-      dy = imgY;
-    } else {
+    if (imgAspect < boxAspect) {
+      // Image is taller — fit by width, center vertically
       dw = imgW;
       dh = dw / imgAspect;
       dx = imgX;
-      dy = imgY - (dh - imgH) / 2;
+      dy = imgY + (imgH - dh) / 2;
+    } else {
+      // Image is wider — fit by height, center horizontally
+      dh = imgH;
+      dw = dh * imgAspect;
+      dx = imgX + (imgW - dw) / 2;
+      dy = imgY;
     }
     ctx.drawImage(charImg, dx, dy, dw, dh);
   } else {

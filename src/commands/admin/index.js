@@ -551,8 +551,6 @@ Started by: @${cleanId(sender)}
             if (!isBotOwner) return reply("🚫 Owner only.");
             if (!isGroup) return reply("🚫 Group only.");
 
-            // 🛠 FIX (Phase 4 / 4.3): don't overwrite an active drop —
-            // users racing to .claim the current card would lose it.
             if (activeDrops.has(chat))
                 return reply("⚠️ A card drop is already active. Wait for it to be claimed or expire.");
 
@@ -561,11 +559,35 @@ Started by: @${cleanId(sender)}
             const card = animeCards[Math.floor(Math.random() * animeCards.length)];
 
             activeDrops.set(chat, { ...card });
-            await sock.sendMessage(chat, {
-                image: { url: card.image },
-                caption: `🎴 *ADMIN AIRDROP SPIN!*\n\n🏷 Name: ${card.name}\n✨ Tier: ${card.tier}\n💰 Worth: $${formatMoney(card.worth)}\n\n⚡ First to type *.claim* wins!`,
-                mentions
-            }, { quoted: msg });
+
+            // 🎨 Try animated card reveal first
+            const airdropCaption = `🎴 *ADMIN AIRDROP SPIN!*\n\n🏷 Name: ${card.name}\n✨ Tier: ${card.tier}\n💰 Worth: $${formatMoney(card.worth)}\n\n⚡ First to type *.claim* wins!`;
+
+            let animSent = false;
+            try {
+                const { generateCardImage } = require("../../../utils/cardRenderer");
+                const animBuffer = await generateCardImage(card);
+                if (animBuffer && animBuffer.length > 5000) {
+                    await sock.sendMessage(chat, {
+                        video: animBuffer,
+                        gifPlayback: true,
+                        mimetype: "video/mp4",
+                        caption: airdropCaption,
+                        mentions
+                    }, { quoted: msg });
+                    animSent = true;
+                }
+            } catch (err) {
+                console.log("Admin airdrop animated failed:", err.message);
+            }
+
+            if (!animSent) {
+                await sock.sendMessage(chat, {
+                    image: { url: card.image },
+                    caption: airdropCaption,
+                    mentions
+                }, { quoted: msg });
+            }
 
             return;
         }

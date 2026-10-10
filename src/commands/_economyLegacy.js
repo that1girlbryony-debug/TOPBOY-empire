@@ -114,7 +114,7 @@ async function getGifAsMp4(url) {
     ];
 
     await new Promise((resolve, reject) => {
-      execFile("ffmpeg", ffmpegArgs, { timeout: 30000 }, (err, stdout, stderr) => {
+      execFile(require("ffmpeg-static"), ffmpegArgs, { timeout: 30000 }, (err, stdout, stderr) => {
         if (err) reject(new Error(stderr ? stderr.substring(0, 200) : err.message));
         else resolve();
       });
@@ -2339,7 +2339,7 @@ ${tierEmoji} ${tier.name}
     try {
       const { generateCardImage } = require("../../utils/cardRenderer");
       const animBuffer = await generateCardImage(card);
-      if (animBuffer && animBuffer.length > 10000) {
+      if (animBuffer && animBuffer.length > 5000) {
         await sock.sendMessage(chat, {
           video: animBuffer,
           gifPlayback: true,
