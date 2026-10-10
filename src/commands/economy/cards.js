@@ -110,21 +110,9 @@ async function handle(ctx) {
         return reply("⚠️ Card image missing.");
       }
 
-      const tierEmoji = TIER_EMOJI[card.tier] || "⚪";
-
-      const caption =
-`▬▬▬▬▬▬▬▬▬▬▬▬▬▬
-*🎴 CARD DETAILS*
-▬▬▬▬▬▬▬▬▬▬▬▬▬▬
-
-🃏 ${card.name}
-${tierEmoji} ${card.tier}
-💰 $${formatMoney(card.worth)}
-
-
-▬▬▬▬▬▬▬▬▬▬▬▬▬▬`;
-
-      // 🎨 Task 15: premium static TCG card (disk-cached — repeat
+      // 🎨 Task 17: NO text outside the card — name/tier/worth are
+      // baked onto the TCG frame itself; send the showcase image clean.
+      // 🎨 Task 15/17: premium static TCG card (disk-cached — repeat
       // views of the same card are instant, no re-render lag)
       try {
         const { generateCardImage } = require("../../../utils/cardRenderer");
@@ -133,7 +121,6 @@ ${tierEmoji} ${card.tier}
         if (renderedBuffer && renderedBuffer.length > 0) {
           await sock.sendMessage(chat, {
             image: renderedBuffer,
-            caption,
           }, { quoted: msg });
           return;
         }
@@ -141,10 +128,9 @@ ${tierEmoji} ${card.tier}
         console.log("Card render failed, using fallback:", err.message);
       }
 
-      // Fallback: original image URL
+      // Fallback: original image URL (also caption-free)
       await sock.sendMessage(chat, {
         image: { url: card.image },
-        caption,
       }, { quoted: msg });
       return;
     }

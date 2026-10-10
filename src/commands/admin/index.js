@@ -561,7 +561,9 @@ Started by: @${cleanId(sender)}
             activeDrops.set(chat, { ...card });
 
             // 🎨 Try animated card reveal first
-            const airdropCaption = `🎴 *ADMIN AIRDROP SPIN!*\n\n🏷 Name: ${card.name}\n✨ Tier: ${card.tier}\n💰 Worth: $${formatMoney(card.worth)}\n\n⚡ First to type *.claim* wins!`;
+            // 🎨 Task 17: NO text outside the card — name/tier/worth are
+            // baked onto the TCG frame. Caption = claim instruction only.
+            const airdropCaption = `⚡ First to *.claim* wins!`;
 
             let animSent = false;
             try {

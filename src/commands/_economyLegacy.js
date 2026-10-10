@@ -2321,19 +2321,9 @@ async function triggerSpontaneousEvents(sock, chat, isGroup) {
 
     const tierEmoji = { Common: "⚪", Rare: "🔵", Epic: "🟣", Legendary: "🟡", Mythic: "🔴" }[tier.name] || "⚪";
 
-    // 🎨 Phase 5.1: Try animated card for airdrop
-    const airdropCaption =
-`▬▬▬▬▬▬▬▬▬▬▬▬▬▬
-*🎴 CARD AIRDROP!*
-▬▬▬▬▬▬▬▬▬▬▬▬▬▬
-
-🃏 ${card.name}
-${tierEmoji} ${tier.name}
-💰 $${formatMoney(card.worth)}
-
-⚡ First to *.claim* wins!
-
-▬▬▬▬▬▬▬▬▬▬▬▬▬▬`;
+    // 🎨 Task 17: NO text outside the card — name/tier/worth are baked
+    // onto the TCG frame itself. Caption = claim instruction only.
+    const airdropCaption = `⚡ First to *.claim* wins!`;
 
     let animSent = false;
     try {
