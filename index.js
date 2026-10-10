@@ -917,6 +917,12 @@ All commands are now active here.
             }
 
             // 🆕 ================= FULL GROUP AUTHORIZATION CHECK =================
+            // 🛠 DEBUG (v6.3): Log every group command attempt to diagnose
+            // why commands are being ignored. Remove after debugging is complete.
+            if (text.startsWith(config.prefix)) {
+                const _dbgOwner = isOwnerJid(sender);
+                console.log(`🔍 [DEBUG] cmd="${text.substring(0, 30)}" sender=${sender} owner=${_dbgOwner} botLid=${config.botLid}`);
+            }
             // Previously this only checked "is the bot an admin here?" —
             // now it also requires the bot OWNER to actually be a member
             // AND an admin of this group. Groups that fail get a warning;
@@ -938,6 +944,11 @@ All commands are now active here.
             const isOwnerAdminHere = ownerInGroup?.admin === "admin" || ownerInGroup?.admin === "superadmin";
 
             const isAuthorizedGroup = !!metadata && isBotAdmin && !!ownerInGroup && isOwnerAdminHere;
+
+            // 🛠 DEBUG: Log the authorization result
+            if (text.startsWith(config.prefix)) {
+                console.log(`🔍 [DEBUG] auth: metadata=${!!metadata} botAdmin=${isBotAdmin} ownerFound=${!!ownerInGroup} ownerAdmin=${isOwnerAdminHere} → authorized=${isAuthorizedGroup}`);
+            }
 
             // 🛠 FIX (Phase 4 / 4.3): reset violation counter when group becomes
             // authorized — prevents stale violations from triggering auto-leave
