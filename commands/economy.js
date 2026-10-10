@@ -1,26 +1,42 @@
 /**
- * 🛠 commands/economy.js — Phase 2 / 2.7
+ * 🛠 commands/economy.js — BACKWARD COMPATIBILITY SHIM
  *
- * BACKWARD COMPATIBILITY SHIM.
+ * ROOT CAUSE FIX: This shim was forwarding to the legacy handler
+ * (src/commands/_economyLegacy.js), but ALL commands have been
+ * migrated to src/commands/economy/*.js modules and are now routed
+ * through src/commands/_router.js. The legacy handler's MIGRATED
+ * guard intercepts every migrated command, logs a warning, and
+ * returns — so the bot silently did nothing.
  *
- * The original 6,065-line economy.js has been relocated to
- * src/commands/_economyLegacy.js (with require paths updated).
+ * FIX: Forward to the router instead of the legacy handler.
+ * The router checks MIGRATED_COMMANDS first (handles all 78
+ * commands via the 12 domain modules), then falls back to legacy
+ * for any unmigrated commands (there are none, but it's safe).
  *
- * This file exists so any external code that still does
- * `require("./commands/economy")` continues to work. It re-exports
- * everything the legacy file exports.
- *
- * 🛠 MIGRATION TARGET: Phase 2.5 will progressively migrate commands
- * out of _economyLegacy.js into proper domain modules under
- * src/commands/economy/{money,gamble,businesses,cards,social,events,
- * progression}.js. When migration is complete, _economyLegacy.js
- * will be deleted and this shim will become the new router.
- *
- * Until then: just re-export.
+ * Named exports (spawnTrivia, checkQuickDraw, handleDMAction, etc.)
+ * are still re-exported from the legacy file since the router
+ * doesn't provide those — they're game-engine functions used by
+ * index.js and admin.js directly.
  */
 
-module.exports = require("../src/commands/_economyLegacy");
+// Route command handling through the router
+const router = require("../src/commands/_router");
 
-// Re-export named exports too (spawnTrivia, spawnMultiTrivia, etc.)
+// The router exports `route(ctx, opts)` which is async and returns
+// a boolean. But index.js calls `handleEconomy(ctx)` expecting it
+// to be an async function that handles the command. So we wrap it.
+const handleEconomy = async (ctx) => {
+  await router.route(ctx, {});
+};
+
+// Re-export named functions from legacy (these are game-engine
+// functions called directly by index.js, not through the router)
 const legacy = require("../src/commands/_economyLegacy");
-Object.assign(module.exports, legacy);
+
+module.exports = handleEconomy;
+module.exports.checkQuickDraw = legacy.checkQuickDraw;
+module.exports.handleDMAction = legacy.handleDMAction;
+module.exports.spawnTrivia = legacy.spawnTrivia;
+module.exports.spawnMultiTrivia = legacy.spawnMultiTrivia;
+module.exports.activeDrops = legacy.activeDrops;
+module.exports.checkGifSetup = legacy.checkGifSetup;
