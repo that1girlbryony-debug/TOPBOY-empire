@@ -1,0 +1,28 @@
+# ── TOPBOY EMPIRE — Render.com Blueprint ────────────────────────
+# This file lets you deploy to Render.com in one click.
+# Go to: Dashboard → New → Blueprint → select this repo.
+# Render will read this file and create the service automatically.
+
+services:
+  - type: web
+    name: topboy-empire
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node index.js
+    healthCheckPath: /
+    envVars:
+      - key: MONGO_URI
+        sync: false
+        description: MongoDB connection string (mongodb+srv://...)
+      - key: PHONE_NUMBER
+        sync: false
+        description: WhatsApp phone number (country code + digits)
+      - key: PORT
+        value: 3000
+      - key: NODE_ENV
+        value: production
+    disk:
+      - name: auth-data
+        mountPath: /opt/render/project/src/auth
+        sizeGB: 1

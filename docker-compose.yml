@@ -1,0 +1,20 @@
+version: "3.8"
+
+services:
+  topboy:
+    build: .
+    container_name: topboy-empire
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./auth:/app/auth
+      - ./data:/app/data
+    environment:
+      - MONGO_URI=${MONGO_URI}
+      - PHONE_NUMBER=${PHONE_NUMBER}
+      - PORT=3000
+      - NODE_ENV=production
+      # Optional:
+      # - BOT_GROUP_LINK=${BOT_GROUP_LINK}
+      # - YT_COOKIE=${YT_COOKIE}
