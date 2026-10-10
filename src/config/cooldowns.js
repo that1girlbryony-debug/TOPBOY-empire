@@ -24,6 +24,7 @@ module.exports = {
   casino: 120000,       // 2 minutes
   roulette: 60000,      // 1 minute
   dice: 60000,          // 1 minute — head-to-head dice game
+  blackjack: 60000,    // 1 minute — new Phase 6
 
   // ── Mini-game cooldowns (not all currently used; left for future) ──
   // (Removed `bet` — no .bet command exists. Was a dead entry.)

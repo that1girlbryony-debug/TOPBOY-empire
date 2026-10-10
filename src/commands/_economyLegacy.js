@@ -2568,7 +2568,7 @@ module.exports = async (context) => {
     "casino", "slots", "cf", "roulette",
     "col", "view", "burn",
     "marry", "divorce", "spouse", "marriageaccept", "marriagereject",
-    "slap", "kill", "yeet", "fuck", "kiss",
+    "slap", "kill", "yeet", "wild", "kiss",
     "shop", "buy", "sell", "assets", "items", "tools",
     "menu", "help", "about", "test", "debug", "afk",
     "loan", "payloan", "bail", "trade", "tradeaccept", "tradereject", "fuse", "rob",

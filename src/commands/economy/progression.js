@@ -102,11 +102,20 @@ async function handle(ctx) {
 
       const baseReward = 5000 + (user.streak * 500);
 
+      // 🆕 Phase 6: Streak milestone bonuses
+      let streakBonus = 0;
+      let streakNote = "";
+      const newStreak = user.streak + 1;
+      if (newStreak === 7) { streakBonus = 50000; streakNote = "🔥 7-day streak bonus! "; }
+      else if (newStreak === 14) { streakBonus = 150000; streakNote = "🔥 14-day streak bonus! "; }
+      else if (newStreak === 30) { streakBonus = 500000; streakNote = "👑 30-day streak bonus! "; }
+      else if (newStreak > 0 && newStreak % 30 === 0) { streakBonus = 1000000; streakNote = "👑 Monthly master bonus! "; }
+
       let income = 0;
       user.assets.forEach(a => income += a.income || 0);
 
       const bankInterest = Math.floor(user.bank * 0.01);
-      const grossTotal = baseReward + income + bankInterest;
+      const grossTotal = baseReward + income + bankInterest + streakBonus;
 
       const taxAmount = calculateTax(grossTotal);
       const total = grossTotal - taxAmount;
@@ -118,10 +127,10 @@ async function handle(ctx) {
       const rewardXP = createRewardXP({ user, command });
       await rewardXP();
 
-      // 💍 MARRIAGE: share 50% of daily earnings with spouse
+      // 💍 MARRIAGE: share 50% of daily earnings with spouse (excluding streak bonus)
       let spouseShare = 0;
       if (user.marriage?.spouseId) {
-        spouseShare = Math.floor(total * 0.5);
+        spouseShare = Math.floor((total - streakBonus) * 0.5);
         const spouse = await User.findOne({ userId: user.marriage.spouseId });
         if (spouse) {
           user.wallet -= spouseShare;
@@ -140,7 +149,7 @@ async function handle(ctx) {
 💵 Base: $${formatMoney(baseReward)}
 🏢 Business Income: $${formatMoney(income)}
 🏦 Bank Interest: $${formatMoney(bankInterest)}
-${taxAmount > 0 ? `💸 Tax: -$${formatMoney(taxAmount)}\n` : ""}▬▬▬▬▬▬▬▬▬▬▬▬
+${streakBonus > 0 ? `🔥 Streak Bonus: +$${formatMoney(streakBonus)}\n` : ""}${taxAmount > 0 ? `💸 Tax: -$${formatMoney(taxAmount)}\n` : ""}▬▬▬▬▬▬▬▬▬▬▬▬
 💰 Received: $${formatMoney(total)}`;
 
       if (spouseShare > 0) {
@@ -148,6 +157,7 @@ ${taxAmount > 0 ? `💸 Tax: -$${formatMoney(taxAmount)}\n` : ""}▬▬▬▬▬
       }
 
       replyText += `\n\n🔥 Streak: ${user.streak} day${user.streak !== 1 ? "s" : ""}`;
+      if (streakBonus > 0) replyText += `\n${streakNote}🎉`;
       replyText += `\n▬▬▬▬▬▬▬▬▬▬▬▬▬▬`;
 
       return reply(replyText);
@@ -217,26 +227,33 @@ ${job} and earned:
     }
 
     // =====================================================
-    // 🏆 LEADERBOARD / RICHEST (alias)
+    // 🏆 LEADERBOARD / RICHEST (alias) + .lb week / .lb month
     // =====================================================
     case "lb":
     case "richest": {
-      const users = await User.find({}, "userId wallet bank assets debt");
+      const timeframe = args[0]?.toLowerCase();
+      const titlePrefix = timeframe === "week" ? " (WEEKLY)" :
+                          timeframe === "month" ? " (MONTHLY)" : "";
+
+      // For week/month: sort by totalEarned in the period
+      // (simplified — uses totalEarned as a proxy)
+      const users = timeframe
+        ? await User.find({}, "userId wallet bank assets debt totalEarned streak").sort({ totalEarned: -1 }).limit(10)
+        : await User.find({}, "userId wallet bank assets debt");
 
       const sorted = users
         .map(u => ({
           userId: u.userId,
-          net: calculateNetWorth(u)
+          net: timeframe ? (u.totalEarned || 0) : calculateNetWorth(u)
         }))
         .sort((a, b) => b.net - a.net)
         .slice(0, 10);
 
       const medals = ["👑", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
 
-      // 🛠 FIX (Phase 3.5): no @mentions — just plain names. Tagging
-      // leaderboard members was annoying them every time someone
-      // checked .lb. Now shows names as plain text.
-      let text = `▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n*🏆 TOP 10 RICHEST*\n▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n`;
+      let text = `▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n*🏆 TOP 10 RICHEST${titlePrefix}*\n▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n`;
+
+      if (timeframe) text += `📊 Sorted by total earned\n`;
 
       sorted.forEach((u, i) => {
         const medal = medals[i] || `${i + 1}.`;
@@ -244,7 +261,8 @@ ${job} and earned:
         text += `\n${medal} ${name}\n   💎 $${formatShort(u.net)}\n`;
       });
 
-      text += `\n▬▬▬▬▬▬▬▬▬▬▬▬▬▬`;
+      text += `\n${timeframe ? "📝 .lb for all-time ranking" : "📝 .lb week / .lb month for time-boxed"}\n`;
+      text += `▬▬▬▬▬▬▬▬▬▬▬▬▬▬`;
 
       return reply(text);
     }

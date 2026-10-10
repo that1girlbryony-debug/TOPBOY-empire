@@ -29,7 +29,8 @@ module.exports = {
         bet: 60000,           // 1 minute (DEAD ENTRY — no .bet command exists; removed in Phase 2)
         slots: 60000,         // 1 minute
         casino: 120000,       // 2 minutes
-        roulette: 60000       // 1 minute
+        roulette: 60000,      // 1 minute
+        blackjack: 60000     // 1 minute — Phase 6
     },
 
     // DATABASE CONFIGURATION
