@@ -250,7 +250,7 @@ ${job} and earned:
     }
 
     // =====================================================
-    // 👤 PROFILE
+    // 👤 PROFILE — rendered canvas image
     // =====================================================
     case "profile": {
       const target =
@@ -268,6 +268,49 @@ ${job} and earned:
       targetUser.collection = targetUser.collection || [];
 
       const net = calculateNetWorth(targetUser);
+
+      // Get profile picture
+      let pfpUrl = null;
+      let pfpBuffer = null;
+      try {
+        pfpUrl = await sock.profilePictureUrl(target, "image");
+      } catch {
+        try {
+          const fs = require("fs");
+          if (fs.existsSync("./data/profile.jpg")) {
+            pfpBuffer = fs.readFileSync("./data/profile.jpg");
+          }
+        } catch {}
+      }
+
+      const mentions = targetUser.marriage?.spouseId
+        ? [target, targetUser.marriage.spouseId]
+        : [target];
+
+      // 🎨 Try rendering styled profile card
+      try {
+        const { renderProfileCard } = require("../../utils/profileRenderer");
+        const cardBuffer = await renderProfileCard(targetUser, pfpUrl, pfpBuffer, {
+          calculateNetWorth,
+          formatMoney,
+          formatShort,
+          cleanId,
+          xpForNextLevel,
+          createXPBar,
+        });
+
+        if (cardBuffer) {
+          return sock.sendMessage(chat, {
+            image: cardBuffer,
+            caption: `👤 @${cleanId(target)}`,
+            mentions,
+          }, { quoted: msg });
+        }
+      } catch (err) {
+        console.log("Profile card render failed, using text:", err.message);
+      }
+
+      // Fallback: text-based profile
       const neededXP = xpForNextLevel(targetUser.level);
       const bar = createXPBar(targetUser.xp, neededXP);
       const title = getTitle(net);
@@ -275,18 +318,6 @@ ${job} and earned:
       const marital = targetUser.marriage?.spouseId
         ? `💍 @${cleanId(targetUser.marriage.spouseId)}`
         : "💔 Single";
-
-      let pfp = null;
-      try {
-        pfp = await sock.profilePictureUrl(target, "image");
-      } catch {
-        try {
-          const fs = require("fs");
-          if (fs.existsSync("./data/profile.jpg")) {
-            pfp = fs.readFileSync("./data/profile.jpg");
-          }
-        } catch {}
-      }
 
       const caption =
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
@@ -318,12 +349,8 @@ ${bar}
 
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬`;
 
-      const mentions = targetUser.marriage?.spouseId
-        ? [target, targetUser.marriage.spouseId]
-        : [target];
-
-      if (pfp) {
-        const imageField = Buffer.isBuffer(pfp) ? pfp : { url: pfp };
+      if (pfpUrl || pfpBuffer) {
+        const imageField = pfpBuffer ? pfpBuffer : { url: pfpUrl };
         return sock.sendMessage(
           chat,
           { image: imageField, caption, mentions },
