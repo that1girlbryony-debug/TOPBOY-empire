@@ -23,6 +23,10 @@ const handleEconomy = require("./commands/economy");
 const handleAdmin = require("./commands/admin");
 const { normalizeJid } = require("./utils/helpers");
 
+// 🆕 v6.2: LID normalization — replaces the old local isOwnerJid
+const authLib = require("./src/lib/auth");
+const { isOwnerJid, isOwnerJidAsync, cacheLidMapping, setSocket } = authLib;
+
 // 🆕 v2.0 — Quick Draw is now merged into economy.js (along with the
 // hacker event and X-and-O logic), so we grab its answer-checker off
 // the same handleEconomy export instead of a separate file.
@@ -155,11 +159,8 @@ function clearStaleAuth() {
     }
 }
 
-// ================= OWNER CHECK HELPER =================
-function isOwnerJid(jid) {
-    const norm = normalizeJid(jid);
-    return config.ownerNumbers.some(owner => normalizeJid(owner) === norm);
-}
+// 🆕 v6.2: isOwnerJid is now imported from src/lib/auth.js
+// (LID-aware with PN↔LID cache resolution)
 
 // ================= AFK DURATION FORMATTER =================
 function formatAfkDuration(ms) {
@@ -267,7 +268,7 @@ async function startBot() {
                     }
 
                     if (config.botLid !== detectedLid) {
-                        console.log(`🆔 Bot LID auto-detected: ${detectedLid} (was: ${config.botLid})`);
+                        console.log(`🆔 Bot LID auto-detected: ${detectedLid}`);
                     } else {
                         console.log(`🆔 Bot LID confirmed: ${detectedLid}`);
                     }
@@ -278,6 +279,17 @@ async function startBot() {
                         `falling back to the value in config.js: ${config.botLid}`
                     );
                 }
+
+                // 🆕 v6.2: Give auth.js access to the socket for LID resolution
+                setSocket(sock);
+                console.log("🔐 LID normalization engine active (phone → LID auto-resolve)");
+
+                // 🆕 v6.2: Register lid-mapping.update listener to warm the
+                // PN↔LID cache. This fires whenever WhatsApp pushes new
+                // phone↔LID mappings (usually during initial history sync).
+                sock.ev.on("lid-mapping.update", (mapping) => {
+                    cacheLidMapping(mapping);
+                });
             }
 
             if (connection === "close") {
@@ -638,17 +650,9 @@ Intruder has been removed.
                 const groupData = await User.findOne({ userId: chat });
 
                 if (groupData?.antilink) {
-                    const senderNorm = normalizeJid(sender);
+                    // 🆕 v6.2: use LID-aware admin check
                     const metadata = await sock.groupMetadata(chat);
-
-                    const participant = metadata.participants.find(
-                        p => normalizeJid(p.id) === senderNorm
-                    );
-
-                    const isAdmin =
-                        participant?.admin === "admin" ||
-                        participant?.admin === "superadmin";
-
+                    const isAdmin = authLib.isGroupAdminIn(sender, metadata);
                     const isOwner = isOwnerJid(sender);
 
                     if (!isAdmin && !isOwner) {

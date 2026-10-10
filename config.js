@@ -1,20 +1,25 @@
 /**
  * config.js - Global settings for TOPBOY EMPIRE
+ *
+ * 🆕 v6.2: ownerNumbers now accept PLAIN PHONE NUMBERS (no @lid or
+ * @s.whatsapp.net suffix needed). The bot auto-resolves them to LIDs
+ * at runtime via Baileys' lidMapping API.
+ *
+ * botLid is REMOVED — auto-detected on connect (index.js:258).
  */
 
 module.exports = {
     // The symbol used before commands
     prefix: ".", 
 
-    // Bot Identity
+    // Bot Identity (botLid auto-detected on connect — no need to set here)
     botName: "TOPBOY EMPIRE",
-    botLid: "222140758532267@lid",
     ownerName: "Top Boy",
 
-    // Authorized Owners (The list admin.js looks for)
+    // Authorized Owners — just plain phone numbers (country code + digits)
+    // The bot will auto-resolve these to LIDs at runtime.
     ownerNumbers: [
-        "65215555178563@lid",
-        "2349030784122@s.whatsapp.net"
+        "2348077016582"
     ],
 
     // Global Cooldowns (in milliseconds)

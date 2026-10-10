@@ -1,33 +1,38 @@
 /**
- * 🛠 src/config/index.js — Phase 2
+ * 🛠 src/config/index.js — Phase 2 + v6.2 LID normalization
  * Main config — bot identity, prefix, owners.
  *
- * Split out from the old monolithic config.js so cooldowns and constants
- * can live in their own files (config/cooldowns.js, config/constants.js).
+ * 🆕 v6.2: ownerNumbers now accept PLAIN PHONE NUMBERS. The bot
+ * auto-resolves them to LIDs at runtime via Baileys' lidMapping API.
+ * botLid is REMOVED — auto-detected on connect.
+ *
+ * This file re-exports from the root config.js so there's ONE source
+ * of truth for owner numbers. The root config.js is what users edit.
  */
+
+const rootConfig = require("../../config");
 
 module.exports = {
   // The symbol used before commands
-  prefix: ".",
+  prefix: rootConfig.prefix,
 
-  // Bot Identity
-  botName: "TOPBOY EMPIRE",
-  botLid: "222140758532267@lid",
-  ownerName: "Top Boy",
+  // Bot Identity (botLid auto-detected on connect — not set here)
+  botName: rootConfig.botName,
+  ownerName: rootConfig.ownerName,
 
-  // Authorized Owners (looked up via lib/auth.js isOwnerJid)
-  ownerNumbers: [
-    "65215555178563@lid",
-    "2349030784122@s.whatsapp.net"
-  ],
+  // Authorized Owners — plain phone numbers from root config.js
+  // lib/auth.js resolves these to LIDs at runtime
+  ownerNumbers: rootConfig.ownerNumbers,
 
   // Official group link (shown when bot refuses unauthorized groups).
-  // Set via env var BOT_GROUP_LINK so we don't commit a real link.
   officialGroupLink: process.env.BOT_GROUP_LINK || "",
 
   // Database
-  mongoURI: process.env.MONGO_URI || "mongodb+srv://your_connection_string_here",
+  mongoURI: process.env.MONGO_URI || rootConfig.mongoURI,
 
   // Express server port (for keepalive / health check)
   port: process.env.PORT || 3000,
+
+  // Cooldowns (re-exported from root config)
+  cooldowns: rootConfig.cooldowns,
 };
