@@ -48,27 +48,23 @@ try {
   console.warn("⚠️ [animator] gif-encoder-2 not available — visual animations disabled:", e.message);
 }
 
-// Use system ffmpeg OR ffmpeg-static
+// Use ffmpeg-static binary (works on Render/VPS) — falls back to system ffmpeg
+let _ffmpegBin = null;
 try {
-  const ffmpegPath = require("ffmpeg-static");
-  if (fs.existsSync(ffmpegPath)) {
-    const ffmpeg = require("fluent-ffmpeg");
-    ffmpeg.setFfmpegPath(ffmpegPath);
-    ffmpegAvailable = true;
-  } else {
-    throw new Error("ffmpeg-static binary missing");
-  }
-} catch (e) {
-  // Try system ffmpeg
+  _ffmpegBin = require("ffmpeg-static");
+  if (!fs.existsSync(_ffmpegBin)) _ffmpegBin = null;
+} catch {}
+if (!_ffmpegBin) {
   try {
     const { execSync } = require("child_process");
-    execSync("which ffmpeg", { stdio: "pipe" });
-    const ffmpeg = require("fluent-ffmpeg");
-    ffmpegAvailable = true;
-    console.log("✅ [animator] Using system ffmpeg for GIF→MP4 conversion");
-  } catch {
-    console.warn("⚠️ [animator] ffmpeg not available — visual animations disabled");
-  }
+    _ffmpegBin = execSync("which ffmpeg", { encoding: "utf-8" }).trim();
+  } catch {}
+}
+ffmpegAvailable = !!_ffmpegBin;
+if (ffmpegAvailable) {
+  console.log(`✅ [animator] ffmpeg ready at ${_ffmpegBin}`);
+} else {
+  console.warn("⚠️ [animator] ffmpeg not available — visual animations disabled");
 }
 
 const isReady = () => canvasAvailable && GIFEncoder && ffmpegAvailable;
@@ -133,7 +129,7 @@ async function framesToMp4(frames, width, height, delayMs = 100) {
     ];
 
     await new Promise((resolve, reject) => {
-      execFile("ffmpeg", args, { timeout: 30000 }, (err, stdout, stderr) => {
+      execFile(_ffmpegBin, args, { timeout: 30000 }, (err, stdout, stderr) => {
         if (err) reject(new Error(stderr ? stderr.substring(0, 200) : err.message));
         else resolve();
       });

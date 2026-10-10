@@ -235,8 +235,6 @@ ${job} and earned:
       const titlePrefix = timeframe === "week" ? " (WEEKLY)" :
                           timeframe === "month" ? " (MONTHLY)" : "";
 
-      // For week/month: sort by totalEarned in the period
-      // (simplified — uses totalEarned as a proxy)
       const users = timeframe
         ? await User.find({}, "userId wallet bank assets debt totalEarned streak").sort({ totalEarned: -1 }).limit(10)
         : await User.find({}, "userId wallet bank assets debt");
@@ -251,13 +249,31 @@ ${job} and earned:
 
       const medals = ["👑", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
 
+      // 🛠 FIX: Try to get names from group metadata instead of raw digits
+      let participantNames = {};
+      try {
+        if (isGroup) {
+          const meta = await sock.groupMetadata(chat).catch(() => null);
+          if (meta?.participants) {
+            for (const p of meta.participants) {
+              const id = p.id || p.lid;
+              if (id) {
+                const name = p.name || p.notify || p.id?.split("@")[0] || p.lid?.split("@")[0];
+                participantNames[id] = name;
+              }
+            }
+          }
+        }
+      } catch {}
+
       let text = `▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n*🏆 TOP 10 RICHEST${titlePrefix}*\n▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n`;
 
       if (timeframe) text += `📊 Sorted by total earned\n`;
 
       sorted.forEach((u, i) => {
         const medal = medals[i] || `${i + 1}.`;
-        const name = u.userId.split("@")[0];
+        // Try to get the name from participants, fall back to digits
+        const name = participantNames[u.userId] || u.userId.split("@")[0];
         text += `\n${medal} ${name}\n   💎 $${formatShort(u.net)}\n`;
       });
 
@@ -268,7 +284,7 @@ ${job} and earned:
     }
 
     // =====================================================
-    // 👤 PROFILE — rendered canvas image
+    // 👤 PROFILE — text with PFP image
     // =====================================================
     case "profile": {
       const target =
@@ -287,7 +303,7 @@ ${job} and earned:
 
       const net = calculateNetWorth(targetUser);
 
-      // Get profile picture
+      // Get profile picture URL
       let pfpUrl = null;
       let pfpBuffer = null;
       try {
@@ -301,45 +317,33 @@ ${job} and earned:
         } catch {}
       }
 
-      const mentions = targetUser.marriage?.spouseId
-        ? [target, targetUser.marriage.spouseId]
-        : [target];
-
-      // 🎨 Try rendering styled profile card
-      try {
-        const { renderProfileCard } = require("../../../utils/profileRenderer");
-        const cardBuffer = await renderProfileCard(targetUser, pfpUrl, pfpBuffer, {
-          calculateNetWorth,
-          formatMoney,
-          formatShort,
-          cleanId,
-          xpForNextLevel,
-          createXPBar,
-        });
-
-        if (cardBuffer) {
-          return sock.sendMessage(chat, {
-            image: cardBuffer,
-            caption: `👤 @${cleanId(target)}`,
-            mentions,
-          }, { quoted: msg });
-        }
-      } catch (err) {
-        console.log("Profile card render failed, using text:", err.message);
+      // 🛠 FIX: Try to get spouse's display name instead of raw digits
+      let marital = "💔 Single";
+      const mentions = [target];
+      if (targetUser.marriage?.spouseId) {
+        const spouseId = targetUser.marriage.spouseId;
+        mentions.push(spouseId);
+        // Try to get the spouse's name from WhatsApp contacts
+        let spouseName = cleanId(spouseId);
+        try {
+          // Try group metadata for the spouse's name
+          if (isGroup) {
+            const meta = await sock.groupMetadata(chat).catch(() => null);
+            const spouseP = meta?.participants?.find(p => p.id === spouseId || p.lid === spouseId);
+            if (spouseP?.name || spouseP?.notify) spouseName = spouseP.name || spouseP.notify;
+          }
+        } catch {}
+        marital = `💍 @${spouseName}`;
       }
 
-      // Fallback: text-based profile
       const neededXP = xpForNextLevel(targetUser.level);
       const bar = createXPBar(targetUser.xp, neededXP);
       const title = getTitle(net);
       const totalIncome = targetUser.assets.reduce((s, a) => s + (a.income || 0), 0);
-      const marital = targetUser.marriage?.spouseId
-        ? `💍 @${cleanId(targetUser.marriage.spouseId)}`
-        : "💔 Single";
 
       const caption =
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
-*👤 @${cleanId(target)}'s PROFILE*
+*👤 @${cleanId(target)}*
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 
 ${title}
@@ -363,24 +367,26 @@ ${bar}
 🛡 Shields: ${targetUser.tools?.shield || 0}
 🔫 Guns: ${targetUser.tools?.gun || 0}
 
-
+🔥 Streak: ${targetUser.streak || 0} day${(targetUser.streak || 0) !== 1 ? "s" : ""}
 
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬`;
 
-      if (pfpUrl || pfpBuffer) {
-        const imageField = pfpBuffer ? pfpBuffer : { url: pfpUrl };
-        return sock.sendMessage(
-          chat,
-          { image: imageField, caption, mentions },
-          { quoted: msg }
-        );
+      // Send with PFP image if available, otherwise text only
+      if (pfpUrl) {
+        return sock.sendMessage(chat, {
+          image: { url: pfpUrl },
+          caption,
+          mentions,
+        }, { quoted: msg });
+      } else if (pfpBuffer) {
+        return sock.sendMessage(chat, {
+          image: pfpBuffer,
+          caption,
+          mentions,
+        }, { quoted: msg });
       }
 
-      return sock.sendMessage(
-        chat,
-        { text: caption, mentions },
-        { quoted: msg }
-      );
+      return sock.sendMessage(chat, { text: caption, mentions }, { quoted: msg });
     }
 
     default:
