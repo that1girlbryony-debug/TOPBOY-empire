@@ -1794,8 +1794,124 @@ No correct answers.
 
     return true;
   } catch (err) {
-    console.error("Trivia spawn error:", err.message);
-    return false;
+    console.error("Trivia spawn error (API), trying fallback:", err.message);
+
+    // 🛠 FIX (Phase 4 / 4.4): use local fallback questions when API fails.
+    // Without this, trivia silently fails and users see nothing.
+    try {
+      const fallback = require("../../src/data/triviaFallback");
+      const q = fallback[Math.floor(Math.random() * fallback.length)];
+      const clean = (s) => s
+        .replace(/&quot;/g, '"')
+        .replace(/&#039;/g, "'")
+        .replace(/&amp;/g, "&");
+
+      const question = clean(q.question);
+      const correctAnswer = clean(q.correct_answer).toLowerCase();
+      const allAnswers = [...q.incorrect_answers, q.correct_answer]
+        .map(clean)
+        .sort(() => Math.random() - 0.5);
+      const letters = ["A", "B", "C", "D"];
+      const correctIndex = allAnswers.indexOf(clean(q.correct_answer));
+      const correctLetter = letters[correctIndex];
+
+      triviaActive.set(chat, {
+        correctAnswer,
+        correctLetter,
+        prize: 5000000,
+        answeredUsers: new Set(),
+        correctUsers: [],
+        expiresAt: Date.now() + 30000
+      });
+
+      const diffEmoji = { easy: "🟢", medium: "🟡", hard: "🔴" }[q.difficulty] || "⚪";
+
+      let quizText =
+`▬▬▬▬▬▬▬▬▬▬▬▬▬▬
+*🧠 TRIVIA QUIZ*
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬
+
+📚 ${q.category}
+${diffEmoji} ${q.difficulty.toUpperCase()}
+
+${question}
+
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬`;
+
+      allAnswers.forEach((a, i) => {
+        quizText += `\n${letters[i]}. ${a}`;
+      });
+
+      quizText += `\n\n💰 Prize: $${formatMoney(5000000)}`;
+      quizText += `\n⏰ 30 seconds`;
+      quizText += `\n\nType the letter (A/B/C/D) or the answer`;
+      quizText += `\n⚠️ ONE answer per person`;
+      quizText += `\n`;
+
+      await sock.sendMessage(chat, { text: quizText, mentions: mentions || [] });
+
+      setTimeout(async () => {
+        const active = triviaActive.get(chat);
+        if (!active) return;
+        triviaActive.delete(chat);
+
+        if (active.correctUsers.length > 0) {
+          const winner = active.correctUsers[0];
+          await User.updateOne(
+            { userId: winner },
+            { $inc: { wallet: active.prize } }
+          ).catch(err => console.error("trivia winner payout failed:", err.message));
+
+          const winUser = await User.findOne({ userId: winner });
+          if (winUser?.marriage?.spouseId) {
+            const spouseShare = Math.floor(active.prize * 0.2);
+            await User.updateOne(
+              { userId: winUser.marriage.spouseId },
+              { $inc: { wallet: spouseShare } }
+            ).catch(() => {});
+          }
+
+          await sock.sendMessage(chat, {
+            text:
+`▬▬▬▬▬▬▬▬▬▬▬▬▬▬
+*🏆 QUIZ RESULTS*
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬
+
+✅ Correct answer: ${active.correctAnswer}
+(${active.correctLetter})
+
+👑 Winner: @${winner.split("@")[0]}
+⚡ First to answer correctly
+
+💰 Won: $${formatMoney(active.prize)}
+📊 ${active.answeredUsers.size} players tried
+
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬`,
+            mentions: [winner]
+          });
+        } else {
+          await sock.sendMessage(chat, {
+            text:
+`▬▬▬▬▬▬▬▬▬▬▬▬▬▬
+*⏰ QUIZ EXPIRED*
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬
+
+No correct answers.
+✅ Was: ${active.correctAnswer}
+(${active.correctLetter})
+
+📊 ${active.answeredUsers.size} players tried
+
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬`
+          });
+        }
+      }, 30000);
+
+      return true;
+    } catch (fallbackErr) {
+      console.error("Trivia fallback also failed:", fallbackErr.message);
+      return false;
+    }
   }
 }
 
@@ -2453,6 +2569,12 @@ function xpForNextLevel(level) {
 }
 
 function addXP(user, amount) {
+  // 🛠 FIX (Phase 4 / 4.3): NaN guard — if user.xp or user.level is
+  // corrupted (NaN from a bad merge or DB issue), the while-loop below
+  // would hang forever (NaN >= N is always false, but NaN -= N stays NaN).
+  if (!Number.isFinite(user.xp)) user.xp = 0;
+  if (!Number.isFinite(user.level)) user.level = 1;
+  if (!Number.isFinite(amount)) return;
 
   user.xp = (user.xp || 0) + amount;
 

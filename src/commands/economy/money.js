@@ -66,6 +66,10 @@ async function handle(ctx) {
       if (!amount || amount <= 0)
         return reply("📝 Usage: *.dep <amount>* or *.dep all*");
 
+      // 🛠 FIX (Phase 4 / 4.2): prevent precision loss at extreme values
+      if (amount > Number.MAX_SAFE_INTEGER)
+        return reply("❌ Amount too large.");
+
       if (user.wallet < amount)
         return reply("❌ Not enough wallet funds.");
 
@@ -101,6 +105,10 @@ async function handle(ctx) {
 
       if (!amount || amount <= 0)
         return reply("📝 Usage: *.wd <amount>* or *.wd all*");
+
+      // 🛠 FIX (Phase 4 / 4.2): prevent precision loss at extreme values
+      if (amount > Number.MAX_SAFE_INTEGER)
+        return reply("❌ Amount too large.");
 
       if (user.bank < amount)
         return reply("❌ Not enough bank funds.");

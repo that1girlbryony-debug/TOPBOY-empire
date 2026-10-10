@@ -491,7 +491,14 @@ Intruder has been removed.
             // Extra per-chat cooldown for non-admins, on top of the base 7s
             // antispam above. Only does the (slightly costlier) admin lookup
             // when a group actually has slowmode active.
+            // 🛠 FIX (Phase 4 / 4.3): skip slowmode when mini-games are active
+            // (trivia, quickdraw, multi-trivia) so players can answer in time
             if (isGroup && global._slowmode?.has(chat) && !isOwnerJid(sender)) {
+                const skipSlowmode =
+                    (global._triviaActive?.has(chat)) ||
+                    (global._multiTrivia?.has(chat)) ||
+                    (global._quickDraw?.has(chat));
+                if (!skipSlowmode) {
                 const seconds = global._slowmode.get(chat);
                 let isAdmin = false;
                 try {
@@ -508,6 +515,7 @@ Intruder has been removed.
                     }
                     global._rateLimit.set(slowKey, now);
                 }
+                } // end if (!skipSlowmode)
             }
 
             // 🛠 FIX (Phase 1 / 1.4): expand text extraction to cover all
@@ -923,6 +931,13 @@ All commands are now active here.
             const isOwnerAdminHere = ownerInGroup?.admin === "admin" || ownerInGroup?.admin === "superadmin";
 
             const isAuthorizedGroup = !!metadata && isBotAdmin && !!ownerInGroup && isOwnerAdminHere;
+
+            // 🛠 FIX (Phase 4 / 4.3): reset violation counter when group becomes
+            // authorized — prevents stale violations from triggering auto-leave
+            // if the owner temporarily leaves and rejoins later.
+            if (isAuthorizedGroup && global._groupViolations?.has(chat)) {
+                global._groupViolations.delete(chat);
+            }
 
             if (!isAuthorizedGroup) {
                 if (!global._groupViolations) global._groupViolations = new Map();

@@ -245,8 +245,15 @@ async function handle(ctx) {
       if (user.wallet < item.price)
         return reply("Not enough funds.");
 
+      // 🛠 FIX (Phase 4 / 4.2): MAX_TOOLS cap — wealthy users could buy
+      // unlimited shields/guns, making themselves permanently un-robable
+      const MAX_TOOLS = { shield: 10, gun: 10 };
       if (!user.tools) user.tools = {};
-      user.tools[item.key] = (user.tools[item.key] || 0) + 1;
+      const currentCount = user.tools[item.key] || 0;
+      if (currentCount >= MAX_TOOLS[item.key])
+        return reply(`❌ Max ${MAX_TOOLS[item.key]}x ${item.name} allowed. You own ${currentCount}.`);
+
+      user.tools[item.key] = currentCount + 1;
 
       user.wallet -= item.price;
 
