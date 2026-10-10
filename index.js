@@ -185,25 +185,7 @@ async function startBot() {
             } catch {}
         }
 
-        // 🛠 FIX (v6.3): Use MongoDB auth state instead of filesystem.
-        // This is REQUIRED for Render.com free tier (ephemeral filesystem)
-        // and any platform where the filesystem is wiped on deploy/restart.
-        // Falls back to filesystem if MongoDB auth state fails.
-        let state, saveCreds;
-        try {
-            const { useMongoAuthState } = require("./utils/mongoAuthState");
-            const result = await useMongoAuthState(mongoose, "default");
-            state = result.state;
-            saveCreds = result.saveCreds;
-            console.log("🔐 Using MongoDB auth state (survives restarts)");
-        } catch (mongoAuthErr) {
-            console.warn("⚠️ MongoDB auth state failed, falling back to filesystem:", mongoAuthErr.message);
-            ensureAuthDir();
-            const fileResult = await useMultiFileAuthState("./auth");
-            state = fileResult.state;
-            saveCreds = fileResult.saveCreds;
-            console.log("📁 Using filesystem auth state (may not survive restarts)");
-        }
+        const { state, saveCreds } = await useMultiFileAuthState("./auth");
         const { version } = await fetchLatestBaileysVersion();
 
         const isRegistered = !!state.creds.registered;
