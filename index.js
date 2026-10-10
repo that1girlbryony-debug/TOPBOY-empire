@@ -1137,7 +1137,9 @@ Join my official group to use the bot:
                     "ttt", "move",
                     "rps", "throw", "race", "dogbet",
                     "pnt", "pntjoin",
-                    "afk"
+                    "afk",
+                    // 🎵 Music
+                    "play", "stop"
                 ];
 
                 if (economyCommands.includes(command)) {

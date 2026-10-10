@@ -113,13 +113,24 @@ async function framesToMp4(frames, width, height, delayMs = 100) {
     fs.writeFileSync(gifPath, gifBuffer);
 
     const ffmpeg = require("fluent-ffmpeg");
+    // 🛠 FIX (Phase 5.2): same fix as getGifAsMp4 — add silent audio track
+    // so WhatsApp's gifPlayback player loops the video instead of playing
+    // it once. Without audio, many clients render it as a one-shot video.
     await new Promise((resolve, reject) => {
       ffmpeg(gifPath)
+        .input("anullsrc=channel_layout=stereo:sample_rate=44100")
+        .inputFormat("lavfi")
         .outputOptions([
-          "-movflags faststart",
+          "-shortest",
+          "-c:v libx264",
+          "-preset veryfast",
+          "-crf 23",
           "-pix_fmt yuv420p",
-          "-vf scale=trunc(iw/2)*2:trunc(ih/2)*2",
-          "-loop 0",
+          "-vf scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=15",
+          "-c:a aac",
+          "-b:a 32k",
+          "-movflags faststart",
+          "-tag:v avc1",
         ])
         .toFormat("mp4")
         .on("error", reject)
