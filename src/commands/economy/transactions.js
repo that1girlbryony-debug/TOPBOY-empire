@@ -211,10 +211,18 @@ async function handle(ctx) {
       if (bailCost < 10000000)
         bailCost = 10000000;
 
-      if (user.wallet < bailCost)
-        return reply(`❌ You need $${formatMoney(bailCost)} to bail them out.`);
+      // 🛠 FIX (Phase 4 / 4.3): allow .bail to draw from bank if wallet
+      // insufficient — a wealthy spouse with cash in bank shouldn't be
+      // blocked from bailing their partner.
+      const totalAvailable = (user.wallet || 0) + (user.bank || 0);
+      if (totalAvailable < bailCost)
+        return reply(`❌ You need $${formatMoney(bailCost)} (wallet + bank) to bail them out.\n💵 Wallet: $${formatMoney(user.wallet)}\n🏦 Bank: $${formatMoney(user.bank)}`);
 
-      user.wallet -= bailCost;
+      // Deduct from wallet first, then bank
+      const fromWallet = Math.min(user.wallet || 0, bailCost);
+      const fromBank = bailCost - fromWallet;
+      user.wallet -= fromWallet;
+      user.bank -= fromBank;
       jailedUser.jailUntil = null;
 
       await user.save();
@@ -267,6 +275,11 @@ async function handle(ctx) {
         to: target,
         fromIndex: yourIndex,
         toIndex: theirIndex,
+        // 🛠 FIX (Phase 4 / 4.3): store card identity so tradeaccept
+        // can verify the card hasn't been swapped/sold/burned between
+        // proposal and acceptance.
+        fromCardName: yourCard.name,
+        toCardName: theirCard.name,
         expiresAt: Date.now() + 60000
       });
 
@@ -314,6 +327,15 @@ for @${target.split("@")[0]}'s:
       const toCard = toUser.collection?.[t.toIndex];
       if (!fromCard || !toCard)
         return reply("❌ Trade failed — one of the cards no longer exists (sold/traded already?).");
+
+      // 🛠 FIX (Phase 4 / 4.3): verify card identity matches what was proposed.
+      // Without this, if either user burns/sells/auctions the card between
+      // proposal and acceptance, the wrong card gets traded (collection
+      // indices shifted).
+      if (t.fromCardName && fromCard.name !== t.fromCardName)
+        return reply("❌ Trade failed — the card you offered has changed. Start a new trade.");
+      if (t.toCardName && toCard.name !== t.toCardName)
+        return reply("❌ Trade failed — the card you were offered has changed. Start a new trade.");
 
       fromUser.collection.splice(t.fromIndex, 1);
       toUser.collection.splice(t.toIndex, 1);

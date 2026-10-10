@@ -567,6 +567,11 @@ Started by: @${cleanId(sender)}
             if (!isBotOwner) return reply("🚫 Owner only.");
             if (!isGroup) return reply("🚫 Group only.");
 
+            // 🛠 FIX (Phase 4 / 4.3): don't overwrite an active drop —
+            // users racing to .claim the current card would lose it.
+            if (activeDrops.has(chat))
+                return reply("⚠️ A card drop is already active. Wait for it to be claimed or expire.");
+
             const metadata = groupMetadata || await sock.groupMetadata(chat);
             const mentions = metadata.participants.map(p => p.id);
             const card = animeCards[Math.floor(Math.random() * animeCards.length)];
@@ -996,6 +1001,14 @@ Warnings: ${list.length}/3
             const seconds = parseInt(arg);
             if (isNaN(seconds) || seconds <= 0)
                 return reply("Usage: .slowmode <seconds>  or  .slowmode off");
+
+            // 🛠 FIX (Phase 4 / 4.2): cap slowmode at 3600s (1h).
+            // Without this, a group admin could set .slowmode 999999999
+            // (31 years) and permanently lock out all non-admins.
+            // Values above 3600 require bot owner.
+            const MAX_SLOWMODE = 3600;
+            if (seconds > MAX_SLOWMODE && !isBotOwner)
+                return reply(`🚫 Max slowmode is ${MAX_SLOWMODE}s (1h). Ask the bot owner for higher.`);
 
             global._slowmode.set(chat, seconds);
             return reply(`🐌 Slowmode set: ${seconds}s between commands for non-admins.`);
