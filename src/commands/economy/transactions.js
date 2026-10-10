@@ -25,8 +25,8 @@
  */
 
 const User = require("../../models/User");
-const { formatMoney, randomInt } = require("../../utils/helpers");
-const { fetchRandomCharacter } = require("../../utils/animeFetcher");
+const { formatMoney, randomInt } = require("../../../utils/helpers");
+const { fetchRandomCharacter } = require("../../../utils/animeFetcher");
 const animeCards = require("../../data/animeCards");
 const {
   handleCooldown,

@@ -20,9 +20,9 @@
  */
 
 const User = require("../../models/User");
-const { formatMoney, formatShort, randomInt } = require("../../utils/helpers");
+const { formatMoney, formatShort, randomInt } = require("../../../utils/helpers");
 const animeCards = require("../../data/animeCards");
-const { fetchRandomCharacter } = require("../../utils/animeFetcher");
+const { fetchRandomCharacter } = require("../../../utils/animeFetcher");
 const legacy = require("../_economyLegacy");
 const { handleCooldown, formatTime, createRewardXP } = require("./_shared");
 

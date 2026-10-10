@@ -96,32 +96,28 @@ async function getGifAsMp4(url) {
     });
     fs.writeFileSync(gifPath, Buffer.from(res.data));
 
-    // 🛠 FIX (Phase 5.2): WhatsApp's looping GIF player (gifPlayback:true)
-    // requires a SILENT AUDIO TRACK in the MP4. Without it, many clients
-    // render the video as a one-shot instead of looping. Also added:
-    // - explicit libx264 codec + avc1 tag for iOS compat
-    // - fps cap at 15 for size optimization
-    // - preset veryfast + crf 23 for good quality/size balance
+    // 🛠 FIX (Phase 5.3 test): use execFile instead of fluent-ffmpeg
+    // (fluent-ffmpeg's .inputFormat("lavfi") applies to the wrong input)
+    const { execFile } = require("child_process");
+    const ffmpegArgs = [
+      "-y",
+      "-i", gifPath,
+      "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+      "-shortest",
+      "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+      "-pix_fmt", "yuv420p",
+      "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=15",
+      "-c:a", "aac", "-b:a", "32k",
+      "-movflags", "faststart",
+      "-tag:v", "avc1",
+      mp4Path
+    ];
+
     await new Promise((resolve, reject) => {
-      ffmpegConvert(gifPath)
-        .input("anullsrc=channel_layout=stereo:sample_rate=44100")
-        .inputFormat("lavfi")
-        .outputOptions([
-          "-shortest",
-          "-c:v libx264",
-          "-preset veryfast",
-          "-crf 23",
-          "-pix_fmt yuv420p",
-          "-vf scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=15",
-          "-c:a aac",
-          "-b:a 32k",
-          "-movflags faststart",
-          "-tag:v avc1"
-        ])
-        .toFormat("mp4")
-        .on("error", reject)
-        .on("end", resolve)
-        .save(mp4Path);
+      execFile("ffmpeg", ffmpegArgs, { timeout: 30000 }, (err, stdout, stderr) => {
+        if (err) reject(new Error(stderr ? stderr.substring(0, 200) : err.message));
+        else resolve();
+      });
     });
 
     const mp4Buffer = fs.readFileSync(mp4Path);
@@ -2067,6 +2063,7 @@ Stakes refunded to both.
 // which is exactly the "HEIST_COOLDOWN is not defined" crash. Now
 // it's declared once, here, where both places can actually see it.
 const HEIST_COOLDOWN = 60 * 60 * 1000; // 60 minutes
+const HEIST_DURATION = 80000; // 80 seconds
 
 // ================= MAP CLEANUP TIMERS =================
 // Prevent unbounded growth — clean every 3 minutes
@@ -2550,6 +2547,48 @@ const xpRewards = {
   fuse: 30
 };
 // =====================================================
+// 🛠 FIX (Phase 5.3 test): takeTotalPercent was defined INSIDE the
+// module.exports handler function, so it couldn't be exported at the
+// module level (module.exports.takeTotalPercent = takeTotalPercent at
+// line 6289 referenced a function that wasn't in scope). Moved it to
+// module level (here, before module.exports starts at line 2555).
+// Helper → take % from wallet + bank ATOMICALLY.
+// 🛠 FIX (Phase 1 / 1.1): Was a read-modify-write that raced against
+// the command queue (the heist resolver runs in a setTimeout outside
+// the queue). Now uses conditional $inc so concurrent commands can't
+// be overwritten. Returns the actual amount lost (0 if user has no
+// funds).
+async function takeTotalPercent(u, min, max) {
+  // Read once for the math (the loss amount itself doesn't need to be
+  // atomic — only the deduction does).
+  const total = (u.wallet || 0) + (u.bank || 0);
+  if (total <= 0) return 0;
+
+  const percent = randomInt(min, max) / 100;
+  const loss = Math.floor(total * percent);
+
+  let fromWallet = Math.min(u.wallet || 0, loss);
+  let fromBank = loss - fromWallet;
+
+  // Apply atomically. $inc with negative numbers decrements.
+  // Mirror back into the in-memory doc so the caller sees the new state
+  // if it inspects fields afterwards (e.g. for logging).
+  await User.updateOne(
+    { userId: u.userId },
+    {
+      $inc: {
+        wallet: -fromWallet,
+        bank: -fromBank
+      }
+    }
+  ).catch(err => console.error(`takeTotalPercent failed for ${u.userId}:`, err.message));
+
+  u.wallet = Math.max(0, (u.wallet || 0) - fromWallet);
+  u.bank = Math.max(0, (u.bank || 0) - fromBank);
+
+  return loss;
+}
+
 // 🚀 MAIN MODULE
 // =====================================================
 module.exports = async (context) => {
@@ -4354,45 +4393,8 @@ if (command === "bail") {
 // 80s duration • 30m cooldown • wallet+bank loss
 // =====================================================
 
-const HEIST_DURATION = 80000; // 80 seconds
 // (HEIST_COOLDOWN is now declared at the top of the file — see the note there)
 
-// Helper → take % from wallet + bank ATOMICALLY.
-// 🛠 FIX (Phase 1 / 1.1): Was a read-modify-write that raced against
-// the command queue (the heist resolver runs in a setTimeout outside
-// the queue). Now uses conditional $inc so concurrent commands can't
-// be overwritten. Returns the actual amount lost (0 if user has no
-// funds).
-async function takeTotalPercent(u, min, max) {
-  // Read once for the math (the loss amount itself doesn't need to be
-  // atomic — only the deduction does).
-  const total = (u.wallet || 0) + (u.bank || 0);
-  if (total <= 0) return 0;
-
-  const percent = randomInt(min, max) / 100;
-  const loss = Math.floor(total * percent);
-
-  let fromWallet = Math.min(u.wallet || 0, loss);
-  let fromBank = loss - fromWallet;
-
-  // Apply atomically. $inc with negative numbers decrements.
-  // Mirror back into the in-memory doc so the caller sees the new state
-  // if it inspects fields afterwards (e.g. for logging).
-  await User.updateOne(
-    { userId: u.userId },
-    {
-      $inc: {
-        wallet: -fromWallet,
-        bank: -fromBank
-      }
-    }
-  ).catch(err => console.error(`takeTotalPercent failed for ${u.userId}:`, err.message));
-
-  u.wallet = Math.max(0, (u.wallet || 0) - fromWallet);
-  u.bank = Math.max(0, (u.bank || 0) - fromBank);
-
-  return loss;
-}
 
 // =====================================================
 // 🚫 GLOBAL TRANSACTION LOCK

@@ -24,7 +24,7 @@
  */
 
 const User = require("../../models/User");
-const { formatMoney, formatShort, calculateNetWorth, cleanId } = require("../../utils/helpers");
+const { formatMoney, formatShort, calculateNetWorth, cleanId } = require("../../../utils/helpers");
 const {
   getRemaining,
   handleCooldown,
@@ -180,7 +180,7 @@ ${streakBonus > 0 ? `🔥 Streak Bonus: +$${formatMoney(streakBonus)}\n` : ""}${
         "Walked some dogs",
         "Flipped sneakers online"
       ];
-      const { randomInt } = require("../../utils/helpers");
+      const { randomInt } = require("../../../utils/helpers");
       const job = jobs[randomInt(0, jobs.length - 1)];
       const amount = randomInt(1000, 4000);
 
@@ -207,7 +207,7 @@ ${job} and earned:
     case "beg": {
       if (await handleCooldown(user, "beg", reply)) return true;
 
-      const { randomInt } = require("../../utils/helpers");
+      const { randomInt } = require("../../../utils/helpers");
       const amount = randomInt(200, 800);
       user.wallet += amount;
       const rewardXP = createRewardXP({ user, command });
@@ -307,7 +307,7 @@ ${job} and earned:
 
       // 🎨 Try rendering styled profile card
       try {
-        const { renderProfileCard } = require("../../utils/profileRenderer");
+        const { renderProfileCard } = require("../../../utils/profileRenderer");
         const cardBuffer = await renderProfileCard(targetUser, pfpUrl, pfpBuffer, {
           calculateNetWorth,
           formatMoney,

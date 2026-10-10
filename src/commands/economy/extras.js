@@ -18,7 +18,7 @@
  */
 
 const User = require("../../models/User");
-const { formatMoney, formatShort, randomInt, cleanId, calculateNetWorth } = require("../../utils/helpers");
+const { formatMoney, formatShort, randomInt, cleanId, calculateNetWorth } = require("../../../utils/helpers");
 const { handleCooldown, createRewardXP, getNigeriaDate } = require("./_shared");
 
 const EXTRAS_COMMANDS = new Set([

@@ -22,7 +22,7 @@
  */
 
 const User = require("../../models/User");
-const { formatMoney, normalizeJid } = require("../../utils/helpers");
+const { formatMoney, normalizeJid } = require("../../../utils/helpers");
 const { MARRIAGE_FEE } = require("./_shared");
 
 const INFO_COMMANDS = new Set(["menu", "help", "about", "test", "debug", "afk"]);

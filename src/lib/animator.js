@@ -112,30 +112,31 @@ async function framesToMp4(frames, width, height, delayMs = 100) {
     const gifBuffer = encoder.out.getData();
     fs.writeFileSync(gifPath, gifBuffer);
 
-    const ffmpeg = require("fluent-ffmpeg");
-    // 🛠 FIX (Phase 5.2): same fix as getGifAsMp4 — add silent audio track
-    // so WhatsApp's gifPlayback player loops the video instead of playing
-    // it once. Without audio, many clients render it as a one-shot video.
+    // 🛠 FIX (Phase 5.3 test): fluent-ffmpeg's .inputFormat("lavfi")
+    // applies to the WRONG input (the GIF, not the audio source).
+    // Using execFile with system ffmpeg directly — it handles multi-input
+    // lavfi correctly and produces WhatsApp-compatible MP4 with silent
+    // audio track for proper gifPlayback looping.
+    const { execFile } = require("child_process");
+    const args = [
+      "-y",
+      "-i", gifPath,
+      "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+      "-shortest",
+      "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+      "-pix_fmt", "yuv420p",
+      "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=15",
+      "-c:a", "aac", "-b:a", "32k",
+      "-movflags", "faststart",
+      "-tag:v", "avc1",
+      mp4Path
+    ];
+
     await new Promise((resolve, reject) => {
-      ffmpeg(gifPath)
-        .input("anullsrc=channel_layout=stereo:sample_rate=44100")
-        .inputFormat("lavfi")
-        .outputOptions([
-          "-shortest",
-          "-c:v libx264",
-          "-preset veryfast",
-          "-crf 23",
-          "-pix_fmt yuv420p",
-          "-vf scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=15",
-          "-c:a aac",
-          "-b:a 32k",
-          "-movflags faststart",
-          "-tag:v avc1",
-        ])
-        .toFormat("mp4")
-        .on("error", reject)
-        .on("end", resolve)
-        .save(mp4Path);
+      execFile("ffmpeg", args, { timeout: 30000 }, (err, stdout, stderr) => {
+        if (err) reject(new Error(stderr ? stderr.substring(0, 200) : err.message));
+        else resolve();
+      });
     });
 
     return fs.readFileSync(mp4Path);

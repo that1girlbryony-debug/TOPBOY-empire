@@ -178,28 +178,28 @@ async function framesToMp4(frames, width, height, delayMs = 80) {
     const gifBuffer = encoder.out.getData();
     fs.writeFileSync(gifPath, gifBuffer);
 
-    const ffmpeg = require("fluent-ffmpeg");
-    // 🛠 FIX (Phase 5.2): silent audio track for WhatsApp looping gifPlayback
+    // 🛠 FIX (Phase 5.3 test): use execFile instead of fluent-ffmpeg
+    // (fluent-ffmpeg's .inputFormat("lavfi") applies to the wrong input)
+    const { execFile } = require("child_process");
+    const args = [
+      "-y",
+      "-i", gifPath,
+      "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+      "-shortest",
+      "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+      "-pix_fmt", "yuv420p",
+      "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=15",
+      "-c:a", "aac", "-b:a", "32k",
+      "-movflags", "faststart",
+      "-tag:v", "avc1",
+      mp4Path
+    ];
+
     await new Promise((resolve, reject) => {
-      ffmpeg(gifPath)
-        .input("anullsrc=channel_layout=stereo:sample_rate=44100")
-        .inputFormat("lavfi")
-        .outputOptions([
-          "-shortest",
-          "-c:v libx264",
-          "-preset veryfast",
-          "-crf 23",
-          "-pix_fmt yuv420p",
-          "-vf scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=15",
-          "-c:a aac",
-          "-b:a 32k",
-          "-movflags faststart",
-          "-tag:v avc1",
-        ])
-        .toFormat("mp4")
-        .on("error", reject)
-        .on("end", resolve)
-        .save(mp4Path);
+      execFile("ffmpeg", args, { timeout: 30000 }, (err, stdout, stderr) => {
+        if (err) reject(new Error(stderr ? stderr.substring(0, 200) : err.message));
+        else resolve();
+      });
     });
 
     return fs.readFileSync(mp4Path);

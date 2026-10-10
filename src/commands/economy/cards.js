@@ -21,7 +21,7 @@
  */
 
 const User = require("../../models/User");
-const { formatMoney, formatShort } = require("../../utils/helpers");
+const { formatMoney, formatShort } = require("../../../utils/helpers");
 const { createRewardXP } = require("./_shared");
 
 const CARDS_COMMANDS = new Set(["col", "view", "burn"]);
@@ -126,7 +126,7 @@ ${tierEmoji} ${card.tier}
 
       // 🎨 Phase 5.1: Try animated card reveal (canvas → MP4)
       try {
-        const { generateCardImage } = require("../../utils/cardRenderer");
+        const { generateCardImage } = require("../../../utils/cardRenderer");
         const renderedBuffer = await generateCardImage(card);
 
         if (renderedBuffer && renderedBuffer.length > 0) {

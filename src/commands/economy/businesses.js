@@ -19,7 +19,7 @@
  */
 
 const User = require("../../models/User");
-const { formatMoney, formatShort } = require("../../utils/helpers");
+const { formatMoney, formatShort } = require("../../../utils/helpers");
 const {
   shopItems,
   powerItems,

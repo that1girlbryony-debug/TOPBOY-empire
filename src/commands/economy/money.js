@@ -17,7 +17,7 @@
  */
 
 const User = require("../../models/User");
-const { formatMoney, formatShort, cleanId } = require("../../utils/helpers");
+const { formatMoney, formatShort, cleanId } = require("../../../utils/helpers");
 const { createRewardXP } = require("./_shared");
 
 const MONEY_COMMANDS = new Set(["bal", "dep", "wd", "give", "send"]);

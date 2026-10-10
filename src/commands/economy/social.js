@@ -28,8 +28,8 @@
  */
 
 const User = require("../../models/User");
-const { formatMoney, cleanId, normalizeJid } = require("../../utils/helpers");
-const gifs = require("../../data/gif");
+const { formatMoney, cleanId, normalizeJid } = require("../../../utils/helpers");
+const gifs = require("../../../data/gif");
 const {
   MARRIAGE_FEE,
   DIVORCE_FEE,

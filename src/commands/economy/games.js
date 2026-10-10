@@ -27,7 +27,7 @@
  */
 
 const User = require("../../models/User");
-const { formatMoney, randomInt } = require("../../utils/helpers");
+const { formatMoney, randomInt } = require("../../../utils/helpers");
 const legacy = require("../_economyLegacy");
 const { handleCooldown, createRewardXP } = require("./_shared");
 

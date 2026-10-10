@@ -23,7 +23,7 @@
  */
 
 const User = require("../../models/User");
-const { formatMoney, formatShort, randomInt } = require("../../utils/helpers");
+const { formatMoney, formatShort, randomInt } = require("../../../utils/helpers");
 const animator = require("../../lib/animator");
 const {
   handleCooldown,
