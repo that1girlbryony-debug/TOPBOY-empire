@@ -145,16 +145,12 @@ function askPhoneNumber() {
 }
 
 // ================= CLEAR STALE AUTH =================
-function clearStaleAuth() {
+// 🛠 FIX (v6.3): Removed clearStaleAuth() — it was deleting the auth
+// session on every boot, forcing re-pairing. Auth state now persists
+// in MongoDB, so this function is no longer needed.
+function ensureAuthDir() {
     const authDir = "./auth";
-    if (fs.existsSync(authDir)) {
-        const files = fs.readdirSync(authDir);
-        if (files.length > 0) {
-            console.log("🧹 Clearing stale auth for clean pairing...");
-            fs.rmSync(authDir, { recursive: true, force: true });
-            fs.mkdirSync(authDir);
-        }
-    } else {
+    if (!fs.existsSync(authDir)) {
         fs.mkdirSync(authDir);
     }
 }
@@ -189,7 +185,25 @@ async function startBot() {
             } catch {}
         }
 
-        const { state, saveCreds } = await useMultiFileAuthState("./auth");
+        // 🛠 FIX (v6.3): Use MongoDB auth state instead of filesystem.
+        // This is REQUIRED for Render.com free tier (ephemeral filesystem)
+        // and any platform where the filesystem is wiped on deploy/restart.
+        // Falls back to filesystem if MongoDB auth state fails.
+        let state, saveCreds;
+        try {
+            const { useMongoAuthState } = require("./utils/mongoAuthState");
+            const result = await useMongoAuthState(mongoose, "default");
+            state = result.state;
+            saveCreds = result.saveCreds;
+            console.log("🔐 Using MongoDB auth state (survives restarts)");
+        } catch (mongoAuthErr) {
+            console.warn("⚠️ MongoDB auth state failed, falling back to filesystem:", mongoAuthErr.message);
+            ensureAuthDir();
+            const fileResult = await useMultiFileAuthState("./auth");
+            state = fileResult.state;
+            saveCreds = fileResult.saveCreds;
+            console.log("📁 Using filesystem auth state (may not survive restarts)");
+        }
         const { version } = await fetchLatestBaileysVersion();
 
         const isRegistered = !!state.creds.registered;
