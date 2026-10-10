@@ -374,15 +374,15 @@ ${quote}
         await user.save();
 
         // 🎨 Task 18: dealing animation on felt (cached per hand+outcome)
-        let animMp4 = null;
+        let resultPng = null;
         try {
-          animMp4 = await animator.animateBlackjack({
+          resultPng = await animator.renderBlackjack({
             player: playerHand, dealer: dealerHand,
             playerTotal, dealerTotal, outcome: "blackjack",
           });
         } catch (e) { console.log("blackjack anim failed:", e.message); }
 
-        return animator.sendAnimated(sock, chat, animMp4,
+        return animator.sendResult(sock, chat, resultPng,
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 *🃏 BLACKJACK!*
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬
@@ -414,16 +414,16 @@ Dealer: ${renderHand(dealerHand)} (${dealerTotal})
         user.wallet -= bet;
         await user.save();
 
-        let animMp4 = null;
+        let resultPng = null;
         try {
-          animMp4 = await animator.animateBlackjack({
+          resultPng = await animator.renderBlackjack({
             player: currentHand, dealer: dealerHand,
             playerTotal: currentTotal, dealerTotal,
             outcome: "bust",
           });
         } catch (e) { console.log("blackjack anim failed:", e.message); }
 
-        return animator.sendAnimated(sock, chat, animMp4,
+        return animator.sendResult(sock, chat, resultPng,
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 *🃏 BLACKJACK — BUST!*
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬
@@ -471,16 +471,16 @@ Your hand: ${renderHand(currentHand)} (${currentTotal})
       await user.save();
 
       const bjOutcome = push ? "push" : playerWins ? "win" : "lose";
-      let animMp4 = null;
+      let resultPng = null;
       try {
-        animMp4 = await animator.animateBlackjack({
+        resultPng = await animator.renderBlackjack({
           player: currentHand, dealer: dealerCurrent,
           playerTotal: currentTotal, dealerTotal: dealerCurrentTotal,
           outcome: bjOutcome,
         });
       } catch (e) { console.log("blackjack anim failed:", e.message); }
 
-      return animator.sendAnimated(sock, chat, animMp4,
+      return animator.sendResult(sock, chat, resultPng,
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 *🃏 BLACKJACK*
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬

@@ -7,10 +7,10 @@
  *   .cf       — coin flip: true 50/50, x2 payout (fair game, 0% edge)
  *   .roulette — single-number x35, color x2/x35, even/odd x2
  *
- * 🎨 Phase 3.5 VISUAL UPGRADE:
- *   - Replaced text "Spinning..." + 2s delay with actual animated MP4s
- *     generated server-side via lib/animator.js (canvas → GIF → MP4)
- *   - Sends as WhatsApp video with gifPlayback:true so they animate
+ * 🎨 VISUALS (Task 19 — Casino Noir static engine):
+ *   - Each play sends ONE premium result frame (PNG) rendered server-side
+ *     via lib/animator.js — landed slots, wheel result, ball-in-pocket,
+ *     coin face, verdict plaque. No video, no gifPlayback.
  *   - Falls back to old text approach if animator unavailable
  *
  * Dependencies (via _shared.js):
@@ -35,27 +35,11 @@ const {
 const GAMBLE_COMMANDS = new Set(["casino", "slots", "cf", "roulette"]);
 
 /**
- * Helper: send an animation. Returns true if animation was sent.
- * Falls back to the old text-based approach if animator isn't ready.
+ * Helper: send the static result visual (Task 19 — PNG, no video).
+ * Falls back to the text-based approach if animator isn't ready.
  */
-async function sendAnimation(sock, chat, mp4Buffer, fallbackText, msg) {
-  if (mp4Buffer) {
-    try {
-      await sock.sendMessage(chat, {
-        video: mp4Buffer,
-        gifPlayback: true,
-        mimetype: "video/mp4",
-        caption: fallbackText,
-      }, { quoted: msg });
-      return true;
-    } catch (err) {
-      console.error("[animator] send failed, falling back to text:", err.message);
-    }
-  }
-  // Fallback: old text approach
-  await sock.sendMessage(chat, { text: fallbackText }, { quoted: msg });
-  await new Promise(r => setTimeout(r, 1500));
-  return false;
+async function sendAnimation(sock, chat, pngBuffer, fallbackText, msg) {
+  return animator.sendResult(sock, chat, pngBuffer, fallbackText, msg);
 }
 
 async function handle(ctx) {
@@ -95,7 +79,7 @@ async function handle(ctx) {
 
       // 🎨 Task 18: premium fortune wheel (cached by outcome — repeat
       // plays send instantly; amounts stay in the caption, not the video)
-      const animMp4 = await animator.animateCasino(win);
+      const resultPng = await animator.renderCasino(win);
 
       if (win) {
         const multiplier = 2;
@@ -132,7 +116,7 @@ async function handle(ctx) {
 
         // Send animation with caption, or fallback to text
         const { sock, chat } = ctx;
-        await sendAnimation(sock, chat, animMp4, winText, msg);
+        await sendAnimation(sock, chat, resultPng, winText, msg);
         return;
       } else {
         user.wallet -= amtCasino;
@@ -152,7 +136,7 @@ async function handle(ctx) {
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬`;
 
         const { sock, chat } = ctx;
-        await sendAnimation(sock, chat, animMp4, loseText, msg);
+        await sendAnimation(sock, chat, resultPng, loseText, msg);
         return;
       }
     }
@@ -244,7 +228,8 @@ async function handle(ctx) {
       await user.save();
 
       // 🎨 Task 18: real reel-strip slot machine (cached by reels+multiplier)
-      const animMp4 = await animator.animateSlots(roll, multiplier);
+      // Task 19: emoji roll → vector symbols inside renderSlots (no more blank windows)
+      const resultPng = await animator.renderSlots(roll, multiplier);
 
       let winText = `▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n*🎰 SLOT MACHINE*\n▬▬▬▬▬▬▬▬▬▬▬▬▬▬\n`;
       winText += `\n  [ ${roll.join(" | ")} ]\n\n`;
@@ -263,7 +248,7 @@ async function handle(ctx) {
       winText += `\n`;
 
       const { sock, chat } = ctx;
-      await sendAnimation(sock, chat, animMp4, winText, msg);
+      await sendAnimation(sock, chat, resultPng, winText, msg);
       return;
     }
 
@@ -303,7 +288,7 @@ async function handle(ctx) {
       const rewardXP = createRewardXP({ user, command });
 
       // 🎨 Task 18: tossed gold coin — arc, spin, bounce (cached by result)
-      const animMp4 = await animator.animateCoinFlip(result, win);
+      const resultPng = await animator.renderCoinFlip(result, win);
 
       if (win) {
         const totalShown = amtCF * 2;
@@ -334,7 +319,7 @@ async function handle(ctx) {
 
         winText += `\n`;
         const { sock, chat } = ctx;
-        await sendAnimation(sock, chat, animMp4, winText, msg);
+        await sendAnimation(sock, chat, resultPng, winText, msg);
         return;
       } else {
         user.wallet -= amtCF;
@@ -356,7 +341,7 @@ async function handle(ctx) {
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬`;
 
         const { sock, chat } = ctx;
-        await sendAnimation(sock, chat, animMp4, loseText, msg);
+        await sendAnimation(sock, chat, resultPng, loseText, msg);
         return;
       }
     }
@@ -432,7 +417,7 @@ async function handle(ctx) {
       const rewardXP = createRewardXP({ user, command });
 
       // 🎨 Task 18: European roulette wheel, ball spiral + pocket settle
-      const animMp4 = await animator.animateRoulette(number, color, multiplier);
+      const resultPng = await animator.renderRoulette(number, color, multiplier);
 
       if (multiplier > 0) {
         const totalReturn = amount * multiplier;
@@ -462,7 +447,7 @@ async function handle(ctx) {
 
         winText += `\n`;
         const { sock, chat } = ctx;
-        await sendAnimation(sock, chat, animMp4, winText, msg);
+        await sendAnimation(sock, chat, resultPng, winText, msg);
         return;
       } else {
         user.wallet -= amount;
@@ -484,7 +469,7 @@ async function handle(ctx) {
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬`;
 
         const { sock, chat } = ctx;
-        await sendAnimation(sock, chat, animMp4, loseText, msg);
+        await sendAnimation(sock, chat, resultPng, loseText, msg);
         return;
       }
     }

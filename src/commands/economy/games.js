@@ -243,12 +243,12 @@ Type *.roll*
       game.rolls[sender] = roll;
 
       // 🎨 Task 18: 3D dice tumble (cached per value)
-      let rollAnim = null;
+      let rollPng = null;
       try {
-        rollAnim = await animator.animateDice(roll);
+        rollPng = await animator.renderDice(roll);
       } catch (e) { console.log("dice anim failed:", e.message); }
-      await animator.sendAnimated(
-        sock, chat, rollAnim,
+      await animator.sendResult(
+        sock, chat, rollPng,
         `🎲 @${sender.split("@")[0]} rolled ${roll}`,
         msg, [sender]
       );
@@ -296,12 +296,12 @@ Type .roll
         legacy.activeDiceGames.delete(chat);
 
         // 🎨 Task 18: dice duel final (cached per pair+outcome)
-        let tieAnim = null;
+        let tiePng = null;
         try {
-          tieAnim = await animator.animateDiceDuel(roll1, roll2, "tie");
+          tiePng = await animator.renderDiceDuel(roll1, roll2, "tie");
         } catch (e) { console.log("dice anim failed:", e.message); }
 
-        return animator.sendAnimated(sock, chat, tieAnim,
+        return animator.sendResult(sock, chat, tiePng,
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 *🎲 FINAL RESULT*
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬
@@ -326,12 +326,12 @@ Type .roll
 
       // 🎨 Task 18: dice duel final with winner glow
       const duelOutcome = roll1 === roll2 ? "tie" : roll1 > roll2 ? "p1" : "p2";
-      let duelAnim = null;
+      let duelPng = null;
       try {
-        duelAnim = await animator.animateDiceDuel(roll1, roll2, duelOutcome);
+        duelPng = await animator.renderDiceDuel(roll1, roll2, duelOutcome);
       } catch (e) { console.log("dice anim failed:", e.message); }
 
-      return animator.sendAnimated(sock, chat, duelAnim,
+      return animator.sendResult(sock, chat, duelPng,
 `▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 *🎲 FINAL RESULT*
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬
