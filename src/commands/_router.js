@@ -66,6 +66,7 @@ const info = require("./economy/info");
 const transactions = require("./economy/transactions");
 const games = require("./economy/games");
 const events = require("./economy/events");
+const music = require("./economy/music");
 
 const MIGRATED_COMMANDS = new Map(); // command → handler module
 for (const cmd of progression.PROGRESSION_COMMANDS) MIGRATED_COMMANDS.set(cmd, progression);
@@ -78,6 +79,7 @@ for (const cmd of info.INFO_COMMANDS) MIGRATED_COMMANDS.set(cmd, info);
 for (const cmd of transactions.TRANSACTION_COMMANDS) MIGRATED_COMMANDS.set(cmd, transactions);
 for (const cmd of games.GAME_COMMANDS) MIGRATED_COMMANDS.set(cmd, games);
 for (const cmd of events.EVENT_COMMANDS) MIGRATED_COMMANDS.set(cmd, events);
+for (const cmd of music.MUSIC_COMMANDS) MIGRATED_COMMANDS.set(cmd, music);
 
 // ── Economy commands list (all commands — for the outer gate) ──
 const ECONOMY_COMMANDS = new Set([
@@ -95,7 +97,9 @@ const ECONOMY_COMMANDS = new Set([
   "ttt", "move",
   "rps", "throw", "race", "dogbet",
   "pnt", "pntjoin",
-  "afk"
+  "afk",
+  // 🎵 Music
+  "play", "stop"
 ]);
 
 /**

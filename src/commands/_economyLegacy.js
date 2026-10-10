@@ -75,6 +75,9 @@ try {
 }
 
 if (!global._gifMp4Cache) global._gifMp4Cache = new Map(); // gif URL -> mp4 Buffer
+// 🛠 FIX (Phase 5.2): clear old cache (old MP4s lack silent audio track,
+// so they don't loop properly in WhatsApp). Force re-transcoding on boot.
+global._gifMp4Cache.clear?.();
 const GIF_CACHE_LIMIT = 200; // don't let this grow forever
 
 async function getGifAsMp4(url) {
@@ -93,12 +96,27 @@ async function getGifAsMp4(url) {
     });
     fs.writeFileSync(gifPath, Buffer.from(res.data));
 
+    // 🛠 FIX (Phase 5.2): WhatsApp's looping GIF player (gifPlayback:true)
+    // requires a SILENT AUDIO TRACK in the MP4. Without it, many clients
+    // render the video as a one-shot instead of looping. Also added:
+    // - explicit libx264 codec + avc1 tag for iOS compat
+    // - fps cap at 15 for size optimization
+    // - preset veryfast + crf 23 for good quality/size balance
     await new Promise((resolve, reject) => {
       ffmpegConvert(gifPath)
+        .input("anullsrc=channel_layout=stereo:sample_rate=44100")
+        .inputFormat("lavfi")
         .outputOptions([
-          "-movflags faststart",
+          "-shortest",
+          "-c:v libx264",
+          "-preset veryfast",
+          "-crf 23",
           "-pix_fmt yuv420p",
-          "-vf scale=trunc(iw/2)*2:trunc(ih/2)*2"
+          "-vf scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=15",
+          "-c:a aac",
+          "-b:a 32k",
+          "-movflags faststart",
+          "-tag:v avc1"
         ])
         .toFormat("mp4")
         .on("error", reject)
