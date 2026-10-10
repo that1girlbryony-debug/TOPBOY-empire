@@ -2337,8 +2337,10 @@ ${tierEmoji} ${tier.name}
 
     let animSent = false;
     try {
-      const { generateCardImage } = require("../../utils/cardRenderer");
-      const animBuffer = await generateCardImage(card);
+      // 🎨 Task 15: animated TCG reveal (disk-cached per card+tier —
+      // repeat drops of the same card send instantly)
+      const { generateAnimatedCard, warmCardCache } = require("../../utils/cardRenderer");
+      const animBuffer = await generateAnimatedCard(card);
       if (animBuffer && animBuffer.length > 5000) {
         await sock.sendMessage(chat, {
           video: animBuffer,
@@ -2348,6 +2350,9 @@ ${tierEmoji} ${tier.name}
           mentions
         });
         animSent = true;
+        // Pre-warm the static view render so the winner's first
+        // .view is instant (source image is already downloaded)
+        warmCardCache(card).catch(() => {});
       }
     } catch (err) {
       console.log("Animated airdrop failed, using static:", err.message);

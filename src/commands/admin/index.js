@@ -565,8 +565,9 @@ Started by: @${cleanId(sender)}
 
             let animSent = false;
             try {
-                const { generateCardImage } = require("../../../utils/cardRenderer");
-                const animBuffer = await generateCardImage(card);
+                // 🎨 Task 15: animated TCG reveal (disk-cached per card+tier)
+                const { generateAnimatedCard, warmCardCache } = require("../../../utils/cardRenderer");
+                const animBuffer = await generateAnimatedCard(card);
                 if (animBuffer && animBuffer.length > 5000) {
                     await sock.sendMessage(chat, {
                         video: animBuffer,
@@ -576,6 +577,8 @@ Started by: @${cleanId(sender)}
                         mentions
                     }, { quoted: msg });
                     animSent = true;
+                    // Pre-warm static render for the winner's first .view
+                    warmCardCache(card).catch(() => {});
                 }
             } catch (err) {
                 console.log("Admin airdrop animated failed:", err.message);

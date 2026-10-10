@@ -1,20 +1,32 @@
 /**
- * 🎴 Card Renderer v2 — Animated Card Reveal Engine
+ * 🎴 Card Renderer v3 — Anime TCG Card Engine
  *
- * Replaces the old Jimp-based static card renderer with a canvas-based
- * animated renderer that produces MP4 videos with:
- *   - Card flip animation (back → front reveal)
- *   - Tier-colored gradient borders with glow
- *   - Sparkle/shimmer effects for Legendary/Mythic
- *   - Premium typography with shadows
- *   - Particle effects for high tiers
+ * OWNER DIRECTIVE (Task 15):
+ *   - Cards must look like REAL anime TCG cards: strictly image,
+ *     NO text on the card. Name / tier / worth live in the WhatsApp
+ *     caption only.
+ *   - Full-bleed art on a blurred self-backdrop (no empty margins),
+ *     tier-colored metallic frame with inner hairline, glowing
+ *     legendary borders, corner rarity gems.
+ *   - Kills on-demand lag: every render is cached to disk keyed by
+ *     (image URL + tier + version). First render of a card is fast;
+ *     every later view/spawn is instant. Source image downloads are
+ *     disk-cached too, so repeat renders never touch the network.
  *
- * Falls back to the old Jimp renderer if canvas is unavailable.
+ * Public API:
+ *   generateCardImage(card)   → premium static PNG buffer (fast, cached)
+ *                               — for .view / .col detail viewing
+ *   generateAnimatedCard(card)→ animated MP4 reveal (cached)
+ *                               — for drops / .airdrop
+ *   warmCardCache(card)       → fire-and-forget static pre-render
+ *   renderCardText(card)      → caption text (unchanged)
+ *   isReady()                 → canvas + encoder + ffmpeg present
  */
 
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
+const crypto = require("crypto");
 const axios = require("axios");
 const { formatMoney } = require("./helpers");
 
@@ -23,7 +35,7 @@ let canvasAvailable = false;
 let createCanvas = null;
 let loadImage = null;
 let GIFEncoder = null;
-let ffmpegAvailable = false;
+let ffmpegPath = null;
 
 try {
   const canvas = require("canvas");
@@ -41,82 +53,51 @@ try {
 }
 
 try {
-  const ffmpegPath = require("ffmpeg-static");
-  if (fs.existsSync(ffmpegPath)) {
-    const ffmpeg = require("fluent-ffmpeg");
-    ffmpeg.setFfmpegPath(ffmpegPath);
-    ffmpegAvailable = true;
-  } else {
-    throw new Error("ffmpeg-static binary missing");
-  }
-} catch {
-  try {
-    const { execSync } = require("child_process");
-    execSync("which ffmpeg", { stdio: "pipe" });
-    ffmpegAvailable = true;
-  } catch {
-    console.warn("⚠️ [cardRenderer] ffmpeg not available");
-  }
-}
+  const p = require("ffmpeg-static");
+  if (p && fs.existsSync(p)) ffmpegPath = p;
+} catch {}
 
-const isReady = () => canvasAvailable && GIFEncoder && ffmpegAvailable;
+const isReady = () => canvasAvailable && GIFEncoder && !!ffmpegPath;
 
 // ── Tier design system ────────────────────────────────────────
+// primary  = frame / gem / glow color
+// secondary= gradient partner for the frame ring
+// gradient = card body (visible behind the blurred backdrop edges)
 const TIER_DESIGN = {
   Common: {
-    name: "Common",
-    emoji: "⚪",
-    primary: "#8b949e",
-    secondary: "#484f58",
-    bg: "#0d1117",
-    glow: "rgba(139, 148, 158, 0.3)",
-    gradient: ["#2d333b", "#161b22"],
-    particles: false,
-    shimmer: false,
+    name: "Common", emoji: "⚪",
+    primary: "#9aa4b0", secondary: "#5b6470",
+    bg: "#0d1117", glow: "rgba(154, 164, 176, 0.45)",
+    gradient: ["#23282f", "#10141a"],
+    particles: false, shimmer: false, ring: false,
   },
   Rare: {
-    name: "Rare",
-    emoji: "🔵",
-    primary: "#3498db",
-    secondary: "#1a5276",
-    bg: "#0a1622",
-    glow: "rgba(52, 152, 219, 0.4)",
-    gradient: ["#1a3a5c", "#0d1b2a"],
-    particles: false,
-    shimmer: false,
+    name: "Rare", emoji: "🔵",
+    primary: "#3fa7e8", secondary: "#1a5276",
+    bg: "#0a1622", glow: "rgba(63, 167, 232, 0.55)",
+    gradient: ["#12324e", "#0a1520"],
+    particles: false, shimmer: false, ring: false,
   },
   Epic: {
-    name: "Epic",
-    emoji: "🟣",
-    primary: "#9b59b6",
-    secondary: "#5b2c6f",
-    bg: "#120a16",
-    glow: "rgba(155, 89, 182, 0.5)",
-    gradient: ["#3d1a5c", "#1a0a2e"],
-    particles: true,
-    shimmer: false,
+    name: "Epic", emoji: "🟣",
+    primary: "#a55eea", secondary: "#5b2c6f",
+    bg: "#120a16", glow: "rgba(165, 94, 234, 0.6)",
+    gradient: ["#2e1745", "#170a26"],
+    particles: true, shimmer: false, ring: false,
   },
   Legendary: {
-    name: "Legendary",
-    emoji: "🟡",
-    primary: "#f39c12",
-    secondary: "#b7950b",
-    bg: "#110d04",
-    glow: "rgba(243, 156, 18, 0.5)",
-    gradient: ["#5c4a1a", "#2e2509"],
-    particles: true,
-    shimmer: true,
+    name: "Legendary", emoji: "🟡",
+    primary: "#f5b324", secondary: "#b7791f",
+    bg: "#110d04", glow: "rgba(245, 179, 36, 0.7)",
+    gradient: ["#4a3711", "#241a06"],
+    particles: true, shimmer: true, ring: true,
   },
   Mythic: {
-    name: "Mythic",
-    emoji: "🔴",
-    primary: "#e74c3c",
-    secondary: "#922b21",
-    bg: "#140404",
-    glow: "rgba(231, 76, 60, 0.6)",
-    gradient: ["#5c1a1a", "#2e0808"],
-    particles: true,
-    shimmer: true,
+    name: "Mythic", emoji: "🔴",
+    primary: "#ff5b4f", secondary: "#922b21",
+    bg: "#140404", glow: "rgba(255, 91, 79, 0.75)",
+    gradient: ["#4d1512", "#260808"],
+    particles: true, shimmer: true, ring: true,
   },
 };
 
@@ -124,22 +105,83 @@ const TIER_EMOJI = {
   Common: "⚪", Rare: "🔵", Epic: "🟣", Legendary: "🟡", Mythic: "🔴"
 };
 
-// ── Helper: download image ────────────────────────────────────
+// ── Cache layer (disk + memory) ───────────────────────────────
+const CACHE_DIR = path.join(os.tmpdir(), "topboy-cards");
+try { fs.mkdirSync(CACHE_DIR, { recursive: true }); } catch {}
+
+const memCache = new Map(); // cacheKey → Buffer (bounded)
+const MEM_MAX = 60;
+
+const sha1 = (s) => crypto.createHash("sha1").update(s).digest("hex");
+const RENDER_VERSION = "v3"; // bump to invalidate all caches after design changes
+
+function cacheKey(kind, card) {
+  return sha1(`${kind}|${RENDER_VERSION}|${card.tier}|${card.image}`);
+}
+
+function cachePath(kind, card) {
+  return path.join(CACHE_DIR, `${kind}-${cacheKey(kind, card)}`);
+}
+
+function readCache(kind, card) {
+  const key = cacheKey(kind, card);
+  const mem = memCache.get(key);
+  if (mem) return mem;
+  const file = cachePath(kind, card);
+  try {
+    const buf = fs.readFileSync(file);
+    if (buf.length > 1000) {
+      if (memCache.size >= MEM_MAX) {
+        memCache.delete(memCache.keys().next().value);
+      }
+      memCache.set(key, buf);
+      return buf;
+    }
+  } catch {}
+  return null;
+}
+
+function writeCache(kind, card, buffer) {
+  const key = cacheKey(kind, card);
+  if (memCache.size >= MEM_MAX) {
+    memCache.delete(memCache.keys().next().value);
+  }
+  memCache.set(key, buffer);
+  try { fs.writeFileSync(cachePath(kind, card), buffer); } catch {}
+}
+
+// ── Source image download (disk-cached, never twice) ──────────
 async function downloadImage(url) {
+  // file:// support (offline testing + local assets)
+  if (String(url).startsWith("file://")) {
+    try {
+      const buf = fs.readFileSync(String(url).replace(/^file:\/\//, ""));
+      return buf.length > 100 ? buf : null;
+    } catch {
+      return null;
+    }
+  }
+  const file = path.join(CACHE_DIR, `src-${sha1(url)}`);
+  try {
+    const buf = fs.readFileSync(file);
+    if (buf.length > 1000) return buf;
+  } catch {}
   try {
     const res = await axios.get(url, {
       responseType: "arraybuffer",
-      timeout: 10000,
-      maxContentLength: 5 * 1024 * 1024,
+      timeout: 8000,
+      maxContentLength: 8 * 1024 * 1024,
       headers: { "User-Agent": "Mozilla/5.0" },
     });
-    return Buffer.from(res.data);
+    const buf = Buffer.from(res.data);
+    try { fs.writeFileSync(file, buf); } catch {}
+    return buf;
   } catch {
     return null;
   }
 }
 
-// ── Helper: rounded rect ─────────────────────────────────────
+// ── Geometry helpers ─────────────────────────────────────────
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
@@ -154,8 +196,331 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-// ── Helper: frames → MP4 ─────────────────────────────────────
-async function framesToMp4(frames, width, height, delayMs = 80) {
+function diamond(ctx, x, y, r) {
+  ctx.beginPath();
+  ctx.moveTo(x, y - r);
+  ctx.lineTo(x + r, y);
+  ctx.lineTo(x, y + r);
+  ctx.lineTo(x - r, y);
+  ctx.closePath();
+}
+
+// cover-fit crop: returns source rect that fills the box without distortion
+function coverCrop(img, boxW, boxH) {
+  const iw = img.width, ih = img.height;
+  const scale = Math.max(boxW / iw, boxH / ih);
+  const sw = boxW / scale, sh = boxH / scale;
+  return { sx: (iw - sw) / 2, sy: (ih - sh) / 2, sw, sh };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TCG CARD FRONT — strictly image, no text
+// ═══════════════════════════════════════════════════════════════
+/**
+ * Draws the full card: ambient glow → body → metallic tier frame →
+ * full-bleed art on blurred self-backdrop → vignette → sheen → gems.
+ *
+ * All insets are RELATIVE to W so static (480) and animated (400)
+ * renders share identical proportions.
+ */
+function drawTcgFront(ctx, W, H, design, charImg) {
+  const u = W / 480; // proportional unit
+  const inset = 10 * u;              // glow margin around the card
+  const cw = W - inset * 2;
+  const ch = H - inset * 2;
+  const r = 26 * u;
+  const cx = inset, cy = inset;
+
+  // ── 1. Ambient glow behind the card ───────────────────────
+  ctx.save();
+  const amb = ctx.createRadialGradient(W / 2, H / 2, cw * 0.2, W / 2, H / 2, cw * 0.75);
+  amb.addColorStop(0, design.glow);
+  amb.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = amb;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+
+  // ── 2. Card body (dark base under everything) ─────────────
+  ctx.save();
+  ctx.shadowColor = design.glow;
+  ctx.shadowBlur = 45 * u;
+  const bodyGrad = ctx.createLinearGradient(0, cy, 0, cy + ch);
+  bodyGrad.addColorStop(0, design.gradient[0]);
+  bodyGrad.addColorStop(1, design.gradient[1]);
+  ctx.fillStyle = bodyGrad;
+  roundRect(ctx, cx, cy, cw, ch, r);
+  ctx.fill();
+  ctx.fill(); // double-fill deepens the glow shadow
+  ctx.restore();
+
+  // ── 3. Art window: full-bleed image on blurred backdrop ───
+  const artPad = 16 * u;             // art inset inside the frame
+  const ax = cx + artPad, ay = cy + artPad;
+  const aw = cw - artPad * 2;
+  const ah = ch - artPad * 2 - 8 * u; // extra bottom for frame weight
+  const ar = 16 * u;
+
+  ctx.save();
+  roundRect(ctx, ax, ay, aw, ah, ar);
+  ctx.clip();
+
+  if (charImg) {
+    // 3a. Blurred self-backdrop: draw tiny then upscale (classic
+    //     smoothing blur — works on every node-canvas build)
+    const { sx, sy, sw, sh } = coverCrop(charImg, aw, ah);
+    ctx.imageSmoothingEnabled = true;
+    const mini = createCanvas(24, Math.max(12, Math.round(24 * (sh / sw))));
+    const mctx = mini.getContext("2d");
+    mctx.drawImage(charImg, sx, sy, sw, sh, 0, 0, mini.width, mini.height);
+    ctx.drawImage(mini, ax - 4 * u, ay - 4 * u, aw + 8 * u, ah + 8 * u);
+    ctx.fillStyle = "rgba(0,0,0,0.30)"; // dim the backdrop
+    ctx.fillRect(ax, ay, aw, ah);
+
+    // 3b. Full character, CONTAIN fit — never crops head/feet
+    const scale = Math.min(aw / charImg.width, ah / charImg.height);
+    const dw = charImg.width * scale, dh = charImg.height * scale;
+    ctx.drawImage(charImg, ax + (aw - dw) / 2, ay + (ah - dh) / 2, dw, dh);
+  } else {
+    // Placeholder (rare: image download failed) — pure texture, no text
+    ctx.fillStyle = design.gradient[0];
+    ctx.fillRect(ax, ay, aw, ah);
+    ctx.save();
+    ctx.globalAlpha = 0.25;
+    ctx.strokeStyle = design.primary;
+    ctx.lineWidth = 2 * u;
+    for (let gx = -ah; gx < aw; gx += 34 * u) {
+      ctx.beginPath();
+      ctx.moveTo(gx, ay + ah);
+      ctx.lineTo(gx + ah, ay);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // 3c. Bottom vignette for depth (no text sits on it)
+  const vin = ctx.createLinearGradient(0, ay + ah - 120 * u, 0, ay + ah);
+  vin.addColorStop(0, "rgba(0,0,0,0)");
+  vin.addColorStop(1, "rgba(0,0,0,0.5)");
+  ctx.fillStyle = vin;
+  ctx.fillRect(ax, ay + ah - 120 * u, aw, 120 * u);
+
+  // 3d. Glass sheen across the top half
+  const sheen = ctx.createLinearGradient(0, ay, 0, ay + ah * 0.55);
+  sheen.addColorStop(0, "rgba(255,255,255,0.10)");
+  sheen.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = sheen;
+  ctx.fillRect(ax, ay, aw, ah * 0.55);
+
+  ctx.restore(); // un-clip art window
+
+  // ── 4. Frame system (outside → in) ────────────────────────
+  // 4a. Thick metallic tier ring — the "legendary border"
+  ctx.save();
+  const ringGrad = ctx.createLinearGradient(cx, cy, cx + cw, cy + ch);
+  ringGrad.addColorStop(0, design.primary);
+  ringGrad.addColorStop(0.45, design.secondary);
+  ringGrad.addColorStop(0.55, design.primary);
+  ringGrad.addColorStop(1, design.secondary);
+  ctx.strokeStyle = ringGrad;
+  ctx.globalAlpha = design.ring ? 1 : 0.8;
+  ctx.lineWidth = (design.ring ? 7 : 5) * u;
+  ctx.shadowColor = design.glow;
+  ctx.shadowBlur = 18 * u;
+  roundRect(ctx, cx, cy, cw, ch, r);
+  ctx.stroke();
+  ctx.restore();
+
+  // 4b. Outer dark bezel hairline (crisp card edge)
+  ctx.save();
+  ctx.strokeStyle = "rgba(0,0,0,0.9)";
+  ctx.lineWidth = 2.5 * u;
+  roundRect(ctx, cx + 1 * u, cy + 1 * u, cw - 2 * u, ch - 2 * u, r - 1 * u);
+  ctx.stroke();
+  ctx.restore();
+
+  // 4c. Inner hairline separating frame from art
+  ctx.save();
+  ctx.strokeStyle = design.primary;
+  ctx.globalAlpha = 0.75;
+  ctx.lineWidth = 1.5 * u;
+  ctx.shadowColor = design.glow;
+  ctx.shadowBlur = 8 * u;
+  roundRect(ctx, ax - 3 * u, ay - 3 * u, aw + 6 * u, ah + 6 * u, ar + 3 * u);
+  ctx.stroke();
+  ctx.restore();
+
+  // 4d. Corner rarity gems
+  const gemR = 8 * u;
+  const gOff = 20 * u;
+  const gemPos = [
+    [cx + gOff, cy + gOff],
+    [cx + cw - gOff, cy + gOff],
+    [cx + gOff, cy + ch - gOff],
+    [cx + cw - gOff, cy + ch - gOff],
+  ];
+  ctx.save();
+  ctx.fillStyle = design.primary;
+  ctx.shadowColor = design.glow;
+  ctx.shadowBlur = 14 * u;
+  for (const [gx, gy] of gemPos) {
+    diamond(ctx, gx, gy, gemR);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.55)";
+    ctx.lineWidth = 1.2 * u;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ── Card back (animated reveal only) — pattern + emblem, no text ──
+function drawTcgBack(ctx, W, H, design) {
+  const u = W / 480;
+  const inset = 10 * u, cw = W - inset * 2, ch = H - inset * 2, r = 26 * u;
+
+  const bodyGrad = ctx.createLinearGradient(0, inset, 0, inset + ch);
+  bodyGrad.addColorStop(0, design.gradient[0]);
+  bodyGrad.addColorStop(1, design.gradient[1]);
+  ctx.save();
+  ctx.shadowColor = design.glow;
+  ctx.shadowBlur = 30 * u;
+  ctx.fillStyle = bodyGrad;
+  roundRect(ctx, inset, inset, cw, ch, r);
+  ctx.fill();
+  ctx.restore();
+
+  // diamond lattice
+  ctx.save();
+  roundRect(ctx, inset, inset, cw, ch, r);
+  ctx.clip();
+  ctx.globalAlpha = 0.16;
+  ctx.strokeStyle = design.primary;
+  ctx.lineWidth = 1.5 * u;
+  const step = 44 * u;
+  for (let x = inset - ch; x < inset + cw + ch; x += step) {
+    ctx.beginPath();
+    ctx.moveTo(x, inset);
+    ctx.lineTo(x + ch, inset + ch);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x + ch, inset);
+    ctx.lineTo(x, inset + ch);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // central emblem
+  ctx.save();
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = design.primary;
+  ctx.shadowColor = design.glow;
+  ctx.shadowBlur = 26 * u;
+  ctx.font = `bold ${86 * u}px sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("🎴", W / 2, H / 2);
+  ctx.restore();
+
+  // frame ring + gems
+  const ringGrad = ctx.createLinearGradient(inset, inset, inset + cw, inset + ch);
+  ringGrad.addColorStop(0, design.primary);
+  ringGrad.addColorStop(0.5, design.secondary);
+  ringGrad.addColorStop(1, design.primary);
+  ctx.save();
+  ctx.strokeStyle = ringGrad;
+  ctx.lineWidth = (design.ring ? 7 : 5) * u;
+  ctx.shadowColor = design.glow;
+  ctx.shadowBlur = 18 * u;
+  roundRect(ctx, inset, inset, cw, ch, r);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ── Particles (Epic+) ─────────────────────────────────────────
+function drawParticles(ctx, W, H, particles, frame, design) {
+  ctx.save();
+  ctx.fillStyle = design.primary;
+  ctx.shadowColor = design.glow;
+  ctx.shadowBlur = 8;
+  for (const p of particles) {
+    const y = (p.y - frame * p.speed) % H;
+    const drawY = y < 0 ? y + H : y;
+    const alpha = 0.25 + Math.sin(frame * 0.2 + p.offset) * 0.25;
+    ctx.globalAlpha = Math.max(0, alpha);
+    ctx.beginPath();
+    ctx.arc(p.x, drawY, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ── Holo shimmer sweep (Legendary/Mythic) ─────────────────────
+function drawShimmer(ctx, W, H, frame, totalFrames, design) {
+  const progress = (frame - 14) / Math.max(1, totalFrames - 14);
+  const shimmerX = progress * (W + 140) - 70;
+  ctx.save();
+  const grad = ctx.createLinearGradient(shimmerX - 60, 0, shimmerX + 60, 0);
+  grad.addColorStop(0, "rgba(255,255,255,0)");
+  grad.addColorStop(0.5, "rgba(255,255,255,0.18)");
+  grad.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = grad;
+  ctx.globalCompositeOperation = "screen";
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+}
+
+// ── Load character image ─────────────────────────────────────
+async function loadCharacter(card) {
+  if (!card.image) return null;
+  const buf = await downloadImage(card.image);
+  if (!buf) return null;
+  try {
+    return await loadImage(buf);
+  } catch {
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STATIC PREMIUM CARD  (fast path — .view / collection)
+// ═══════════════════════════════════════════════════════════════
+async function renderStaticCard(card) {
+  if (!isReady()) return null;
+  const W = 480, H = 672;
+  const design = TIER_DESIGN[card.tier] || TIER_DESIGN.Common;
+
+  const canvas = createCanvas(W, H);
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, W, H); // transparent margins, glow shows through
+
+  const charImg = await loadCharacter(card);
+  drawTcgFront(ctx, W, H, design, charImg);
+
+  return canvas.toBuffer("image/png");
+}
+
+async function generateCardImage(card) {
+  if (!isReady()) return null;
+  const cached = readCache("static", card);
+  if (cached) return cached;
+  const buf = await renderStaticCard(card);
+  if (buf && buf.length > 1000) {
+    writeCache("static", card, buf);
+    return buf;
+  }
+  return null;
+}
+
+// fire-and-forget pre-render (called right after a drop is sent)
+async function warmCardCache(card) {
+  try {
+    await generateCardImage(card);
+  } catch {}
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ANIMATED REVEAL  (drops / .airdrop)
+// ═══════════════════════════════════════════════════════════════
+async function framesToMp4(frames, width, height, delayMs = 70) {
   if (!isReady()) return null;
   if (!frames || frames.length === 0) return null;
 
@@ -169,17 +534,10 @@ async function framesToMp4(frames, width, height, delayMs = 80) {
     encoder.setDelay(delayMs);
     encoder.setQuality(10);
     encoder.start();
-
-    for (const frame of frames) {
-      encoder.addFrame(frame);
-    }
-
+    for (const frame of frames) encoder.addFrame(frame);
     encoder.finish();
-    const gifBuffer = encoder.out.getData();
-    fs.writeFileSync(gifPath, gifBuffer);
+    fs.writeFileSync(gifPath, encoder.out.getData());
 
-    // 🛠 FIX (Phase 5.3 test): use execFile instead of fluent-ffmpeg
-    // (fluent-ffmpeg's .inputFormat("lavfi") applies to the wrong input)
     const { execFile } = require("child_process");
     const args = [
       "-y",
@@ -192,16 +550,14 @@ async function framesToMp4(frames, width, height, delayMs = 80) {
       "-c:a", "aac", "-b:a", "32k",
       "-movflags", "faststart",
       "-tag:v", "avc1",
-      mp4Path
+      mp4Path,
     ];
-
     await new Promise((resolve, reject) => {
-      execFile(require("ffmpeg-static"), args, { timeout: 30000 }, (err, stdout, stderr) => {
+      execFile(ffmpegPath, args, { timeout: 30000 }, (err, stdout, stderr) => {
         if (err) reject(new Error(stderr ? stderr.substring(0, 200) : err.message));
         else resolve();
       });
     });
-
     return fs.readFileSync(mp4Path);
   } catch (err) {
     console.error("[cardRenderer] framesToMp4 failed:", err.message);
@@ -212,47 +568,22 @@ async function framesToMp4(frames, width, height, delayMs = 80) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ANIMATED CARD REVEAL
-// ═══════════════════════════════════════════════════════════════
-/**
- * Generates an animated MP4 of a card reveal.
- *
- * Animation sequence:
- *   1. Card back showing (tier-colored with pattern)
- *   2. Flip animation (scale-x, like 3D rotation)
- *   3. Card front reveals with character image
- *   4. Shimmer effect (Legendary/Mythic)
- *   5. Particle sparkles (Epic+)
- *   6. Hold on final card
- *
- * @param {Object} card - { name, tier, worth, image }
- * @returns {Promise<Buffer|null>} MP4 buffer or null if failed
- */
 async function generateAnimatedCard(card) {
   if (!isReady()) return null;
 
+  // ✅ cached: the same card dropping twice never re-renders
+  const cached = readCache("anim", card);
+  if (cached) return cached;
+
   const W = 400, H = 560;
   const design = TIER_DESIGN[card.tier] || TIER_DESIGN.Common;
-
-  // Download character image
-  let charImg = null;
-  if (card.image) {
-    const imgBuffer = await downloadImage(card.image);
-    if (imgBuffer) {
-      try {
-        charImg = await loadImage(imgBuffer);
-      } catch {}
-    }
-  }
+  const charImg = await loadCharacter(card);
 
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext("2d");
-
   const frames = [];
   const totalFrames = 24;
 
-  // Pre-generate particle positions for Epic+ cards
   const particles = [];
   if (design.particles) {
     for (let i = 0; i < 15; i++) {
@@ -267,63 +598,45 @@ async function generateAnimatedCard(card) {
   }
 
   for (let f = 0; f < totalFrames; f++) {
-    const progress = f / totalFrames;
-
-    // ── Phase 1: Card back (frames 0-5) ────────────────────
-    // ── Phase 2: Flip (frames 6-9) ─────────────────────────
-    // ── Phase 3: Front reveal + effects (frames 10-23) ─────
-
     const isFlipping = f >= 6 && f <= 9;
     const showFront = f > 9;
 
-    // Flip effect: scale X from 1 → 0 → 1 (card turns)
     let scaleX = 1;
     if (isFlipping) {
-      const flipProgress = (f - 6) / 4; // 0 → 1
-      scaleX = Math.abs(Math.cos(flipProgress * Math.PI));
-      scaleX = Math.max(0.05, scaleX); // never fully 0
+      const flipProgress = (f - 6) / 4;
+      scaleX = Math.max(0.05, Math.abs(Math.cos(flipProgress * Math.PI)));
     }
 
-    // ── Draw background ───────────────────────────────────
     ctx.fillStyle = "#000000";
     ctx.fillRect(0, 0, W, H);
 
-    // ── Draw card (flipping) ──────────────────────────────
     ctx.save();
     ctx.translate(W / 2, H / 2);
     ctx.scale(scaleX, 1);
     ctx.translate(-W / 2, -H / 2);
 
-    if (!showFront) {
-      // ── CARD BACK ──────────────────────────────────────
-      drawCardBack(ctx, W, H, design);
+    if (showFront) {
+      drawTcgFront(ctx, W, H, design, charImg);
     } else {
-      // ── CARD FRONT ────────────────────────────────────
-      drawCardFront(ctx, W, H, design, card, charImg, f, totalFrames, particles);
+      drawTcgBack(ctx, W, H, design);
     }
-
     ctx.restore();
 
-    // ── Particle effects (always on, but more visible later) ──
     if (design.particles && f > 8) {
       drawParticles(ctx, W, H, particles, f, design);
     }
-
-    // ── Shimmer effect (Legendary/Mythic, frames 14+) ─────
     if (design.shimmer && f >= 14) {
       drawShimmer(ctx, W, H, f, totalFrames, design);
     }
-
-    // ── Glow pulse (frames 10+) ──────────────────────────
     if (showFront) {
-      const pulseAlpha = 0.3 + Math.sin(f * 0.3) * 0.15;
+      const pulseAlpha = 0.25 + Math.sin(f * 0.3) * 0.12;
       ctx.save();
-      ctx.globalAlpha = pulseAlpha;
+      ctx.globalAlpha = Math.max(0.05, pulseAlpha);
       ctx.strokeStyle = design.primary;
-      ctx.lineWidth = 12;
+      ctx.lineWidth = 10;
       ctx.shadowColor = design.glow;
       ctx.shadowBlur = 30;
-      roundRect(ctx, 4, 4, W - 8, H - 8, 16);
+      roundRect(ctx, 5, 5, W - 10, H - 10, 24);
       ctx.stroke();
       ctx.restore();
     }
@@ -331,297 +644,21 @@ async function generateAnimatedCard(card) {
     frames.push(ctx);
   }
 
-  return await framesToMp4(frames, W, H, 80);
+  const mp4 = await framesToMp4(frames, W, H, 70);
+  if (mp4 && mp4.length > 1000) writeCache("anim", card, mp4);
+  return mp4;
 }
 
-// ── Draw card back ───────────────────────────────────────────
-function drawCardBack(ctx, W, H, design) {
-  // Background gradient
-  const grad = ctx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0, design.gradient[0]);
-  grad.addColorStop(1, design.gradient[1]);
-  ctx.fillStyle = grad;
-  roundRect(ctx, 0, 0, W, H, 16);
-  ctx.fill();
-
-  // Border
-  ctx.strokeStyle = design.primary;
-  ctx.lineWidth = 4;
-  roundRect(ctx, 2, 2, W - 4, H - 4, 14);
-  ctx.stroke();
-
-  // Pattern: diamond grid
-  ctx.save();
-  ctx.globalAlpha = 0.15;
-  ctx.strokeStyle = design.primary;
-  ctx.lineWidth = 1;
-  const gridSize = 30;
-  for (let x = 20; x < W - 20; x += gridSize) {
-    for (let y = 20; y < H - 20; y += gridSize) {
-      ctx.beginPath();
-      ctx.moveTo(x, y - 8);
-      ctx.lineTo(x + 8, y);
-      ctx.lineTo(x, y + 8);
-      ctx.lineTo(x - 8, y);
-      ctx.closePath();
-      ctx.stroke();
-    }
-  }
-  ctx.restore();
-
-  // Center emblem
-  ctx.save();
-  ctx.globalAlpha = 0.8;
-  ctx.fillStyle = design.primary;
-  ctx.shadowColor = design.glow;
-  ctx.shadowBlur = 20;
-  ctx.font = "bold 72px sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("🎴", W / 2, H / 2);
-  ctx.restore();
-
-  // TOPBOY text at bottom
-  ctx.fillStyle = design.primary;
-  ctx.globalAlpha = 0.5;
-  ctx.font = "bold 16px sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText("TOPBOY EMPIRE", W / 2, H - 30);
-  ctx.globalAlpha = 1;
-}
-
-// ── Draw card front ───────────────────────────────────────────
-function drawCardFront(ctx, W, H, design, card, charImg, frame, totalFrames, particles) {
-  // Background gradient
-  const grad = ctx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0, design.gradient[0]);
-  grad.addColorStop(1, design.gradient[1]);
-  ctx.fillStyle = grad;
-  roundRect(ctx, 0, 0, W, H, 16);
-  ctx.fill();
-
-  // Tier-colored border
-  ctx.strokeStyle = design.primary;
-  ctx.lineWidth = 4;
-  ctx.shadowColor = design.glow;
-  ctx.shadowBlur = 15;
-  roundRect(ctx, 2, 2, W - 4, H - 4, 14);
-  ctx.stroke();
-  ctx.shadowBlur = 0;
-
-  // ── Character image area ──────────────────────────────
-  const imgX = 20, imgY = 20;
-  const imgW = W - 40, imgH = 340;
-
-  ctx.save();
-  // Clip to rounded rect
-  roundRect(ctx, imgX, imgY, imgW, imgH, 12);
-  ctx.clip();
-
-  if (charImg) {
-    // 🛠 FIX: Use "contain" style instead of "cover" so the full image is visible
-    // (was cutting off the character's head/feet)
-    const imgAspect = charImg.width / charImg.height;
-    const boxAspect = imgW / imgH;
-    let dw, dh, dx, dy;
-    if (imgAspect < boxAspect) {
-      // Image is taller — fit by width, center vertically
-      dw = imgW;
-      dh = dw / imgAspect;
-      dx = imgX;
-      dy = imgY + (imgH - dh) / 2;
-    } else {
-      // Image is wider — fit by height, center horizontally
-      dh = imgH;
-      dw = dh * imgAspect;
-      dx = imgX + (imgW - dw) / 2;
-      dy = imgY;
-    }
-    ctx.drawImage(charImg, dx, dy, dw, dh);
-  } else {
-    // Placeholder
-    ctx.fillStyle = design.secondary;
-    ctx.fillRect(imgX, imgY, imgW, imgH);
-    ctx.fillStyle = design.primary;
-    ctx.font = "48px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("?", imgX + imgW / 2, imgY + imgH / 2);
-  }
-
-  // Bottom gradient overlay on image (for text readability)
-  const imgGrad = ctx.createLinearGradient(0, imgY + imgH - 80, 0, imgY + imgH);
-  imgGrad.addColorStop(0, "rgba(0,0,0,0)");
-  imgGrad.addColorStop(1, design.bg);
-  ctx.fillStyle = imgGrad;
-  ctx.fillRect(imgX, imgY + imgH - 80, imgW, 80);
-
-  ctx.restore();
-
-  // Image border
-  ctx.strokeStyle = design.primary;
-  ctx.lineWidth = 2;
-  ctx.globalAlpha = 0.5;
-  roundRect(ctx, imgX, imgY, imgW, imgH, 12);
-  ctx.stroke();
-  ctx.globalAlpha = 1;
-
-  // ── Tier accent bar ────────────────────────────────────
-  const barY = imgY + imgH + 12;
-  const barGrad = ctx.createLinearGradient(imgX, 0, imgX + imgW, 0);
-  barGrad.addColorStop(0, design.primary);
-  barGrad.addColorStop(0.5, design.secondary);
-  barGrad.addColorStop(1, design.primary);
-  ctx.fillStyle = barGrad;
-  ctx.fillRect(imgX, barY, imgW, 4);
-
-  // ── Card name ──────────────────────────────────────────
-  const nameY = barY + 30;
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 26px sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "alphabetic";
-
-  // Shadow for name
-  ctx.shadowColor = "rgba(0,0,0,0.8)";
-  ctx.shadowBlur = 4;
-  ctx.shadowOffsetY = 2;
-
-  // Truncate long names
-  let displayName = card.name;
-  if (displayName.length > 24) {
-    displayName = displayName.substring(0, 22) + "...";
-  }
-  ctx.fillText(displayName, W / 2, nameY);
-
-  ctx.shadowBlur = 0;
-  ctx.shadowOffsetY = 0;
-
-  // ── Tier label ─────────────────────────────────────────
-  const tierY = nameY + 32;
-  ctx.fillStyle = design.primary;
-  ctx.font = "bold 18px sans-serif";
-  ctx.fillText(`${design.emoji} ${design.name}`, W / 2, tierY);
-
-  // ── Worth ──────────────────────────────────────────────
-  const worthY = tierY + 28;
-  ctx.fillStyle = "#00d4aa";
-  ctx.font = "bold 22px sans-serif";
-  ctx.fillText(`💰 $${formatMoney(card.worth)}`, W / 2, worthY);
-
-  // ── TOPBOY footer ──────────────────────────────────────
-  ctx.fillStyle = design.primary;
-  ctx.globalAlpha = 0.4;
-  ctx.font = "11px sans-serif";
-  ctx.fillText("TOPBOY EMPIRE", W / 2, H - 20);
-  ctx.globalAlpha = 1;
-}
-
-// ── Draw particles (sparkles for Epic+) ───────────────────────
-function drawParticles(ctx, W, H, particles, frame, design) {
-  ctx.save();
-  ctx.fillStyle = design.primary;
-  ctx.shadowColor = design.glow;
-  ctx.shadowBlur = 8;
-
-  for (const p of particles) {
-    // Float upward
-    const y = (p.y - frame * p.speed) % H;
-    const drawY = y < 0 ? y + H : y;
-    const alpha = 0.3 + Math.sin(frame * 0.2 + p.offset) * 0.3;
-    ctx.globalAlpha = Math.max(0, alpha);
-
-    // Star shape
-    ctx.beginPath();
-    ctx.arc(p.x, drawY, p.size, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.restore();
-}
-
-// ── Draw shimmer (sweeping light for Legendary/Mythic) ───────
-function drawShimmer(ctx, W, H, frame, totalFrames, design) {
-  const shimmerProgress = (frame - 14) / (totalFrames - 14);
-  const shimmerX = shimmerProgress * (W + 100) - 50;
-
-  ctx.save();
-  const grad = ctx.createLinearGradient(shimmerX - 40, 0, shimmerX + 40, 0);
-  grad.addColorStop(0, "rgba(255,255,255,0)");
-  grad.addColorStop(0.5, "rgba(255,255,255,0.15)");
-  grad.addColorStop(1, "rgba(255,255,255,0)");
-
-  ctx.fillStyle = grad;
-  ctx.globalCompositeOperation = "screen";
-  ctx.fillRect(0, 0, W, H);
-  ctx.restore();
-}
-
-// ═══════════════════════════════════════════════════════════════
-// STATIC CARD IMAGE (fallback — uses old Jimp renderer)
-// ═══════════════════════════════════════════════════════════════
-async function generateCardImage(card) {
-  // If animated renderer is available, use it
-  if (isReady()) {
-    return await generateAnimatedCard(card);
-  }
-
-  // Fallback: old Jimp renderer
-  return await generateCardImageJimp(card);
-}
-
-// ── Old Jimp renderer (kept as fallback) ──────────────────────
-async function generateCardImageJimp(card) {
-  try {
-    const Jimp = require("jimp");
-    const width = 400;
-    const height = 560;
-    const border = 8;
-    const pad = 20;
-    const imgW = width - pad * 2;
-    const imgH = 340;
-
-    const TIER_COLORS_JIMP = {
-      Common: { border: 0x8b949eff, bg: 0x161b22ff },
-      Rare: { border: 0x3498dbff, bg: 0x1a3a5cff },
-      Epic: { border: 0x9b59b6ff, bg: 0x3d1a5cff },
-      Legendary: { border: 0xf39c12ff, bg: 0x5c4a1aff },
-      Mythic: { border: 0xe74c3cff, bg: 0x5c1a1aff },
-    };
-
-    const colors = TIER_COLORS_JIMP[card.tier] || TIER_COLORS_JIMP.Common;
-    const cardImg = new Jimp(width, height, colors.border);
-
-    // Simple fill for inner area
-    for (let py = border; py < height - border; py++) {
-      for (let px = border; px < width - border; px++) {
-        cardImg.setPixelColor(colors.bg, px, py);
-      }
-    }
-
-    try {
-      const imgBuffer = await downloadImage(card.image);
-      if (imgBuffer) {
-        const charImg = await Jimp.read(imgBuffer);
-        charImg.cover(imgW, imgH);
-        cardImg.composite(charImg, pad, pad);
-      }
-    } catch {}
-
-    return await cardImg.getBufferAsync(Jimp.MIME_PNG);
-  } catch (err) {
-    console.error("[cardRenderer] Jimp fallback failed:", err.message);
-    return null;
-  }
-}
-
+// ── Caption text helper (unchanged contract) ──────────────────
 function renderCardText(card) {
   const emoji = TIER_EMOJI[card.tier] || "⚪";
   return `🎴 ${card.name}\n${emoji} ${card.tier}\n💰 $${formatMoney(card.worth)}`;
 }
 
 module.exports = {
-  generateCardImage,
-  generateAnimatedCard,
+  generateCardImage,   // static premium PNG (cached) — viewing
+  generateAnimatedCard, // animated MP4 (cached) — drops / airdrop
+  warmCardCache,       // fire-and-forget static pre-render
   renderCardText,
   TIER_EMOJI,
   TIER_DESIGN,

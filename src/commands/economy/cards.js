@@ -124,31 +124,17 @@ ${tierEmoji} ${card.tier}
 
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬`;
 
-      // 🎨 Phase 5.1: Try animated card reveal (canvas → MP4)
+      // 🎨 Task 15: premium static TCG card (disk-cached — repeat
+      // views of the same card are instant, no re-render lag)
       try {
         const { generateCardImage } = require("../../../utils/cardRenderer");
         const renderedBuffer = await generateCardImage(card);
 
         if (renderedBuffer && renderedBuffer.length > 0) {
-          // Check if it's a video (MP4) or image (PNG)
-          const isVideo = renderedBuffer[0] === 0x00 && renderedBuffer[1] === 0x00 &&
-                         renderedBuffer[2] === 0x00 && renderedBuffer[3] === 0x20; // MP4 magic
-
-          if (isVideo || renderedBuffer.length > 10000) {
-            // Animated card — send as video with gifPlayback
-            await sock.sendMessage(chat, {
-              video: renderedBuffer,
-              gifPlayback: true,
-              mimetype: "video/mp4",
-              caption,
-            }, { quoted: msg });
-          } else {
-            // Static image (Jimp fallback)
-            await sock.sendMessage(chat, {
-              image: renderedBuffer,
-              caption,
-            }, { quoted: msg });
-          }
+          await sock.sendMessage(chat, {
+            image: renderedBuffer,
+            caption,
+          }, { quoted: msg });
           return;
         }
       } catch (err) {
