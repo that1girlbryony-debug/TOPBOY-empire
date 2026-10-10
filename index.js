@@ -341,19 +341,12 @@ async function startBot() {
 
             // ================= ANTIDEMOTE (ALWAYS ACTIVE — ignores disable state) =================
             if (action === "demote") {
-                const ownerNumbers = config.ownerNumbers.map(o => normalizeJid(o));
                 const botNorm = normalizeJid(config.botLid);
 
                 for (const participant of participants) {
-                    const participantNorm = normalizeJid(participant);
-
-                    // 🛠 FIX (Phase 1 / 1.4): protect the BOT itself, not just owners.
-                    // Without this, a group admin (or anyone WhatsApp allows to demote)
-                    // could strip the bot's admin rights, silently breaking ALL
-                    // admin-requiring commands in that group (kick, mute, promote,
-                    // demote, antilink-removal, votekick-execution) — with no auto-recovery.
-                    const isOwner = ownerNumbers.includes(participantNorm);
-                    const isBotSelf = participantNorm === botNorm;
+                    // 🛠 FIX (v6.3): Use LID-aware isOwnerJid instead of raw phone matching
+                    const isOwner = isOwnerJid(participant);
+                    const isBotSelf = normalizeJid(participant) === botNorm;
 
                     if (!isOwner && !isBotSelf) continue;
 
@@ -937,8 +930,11 @@ All commands are now active here.
             const botInGroup = metadata?.participants?.find(p => normalizeJid(p.id) === botNorm);
             const isBotAdmin = botInGroup?.admin === "admin" || botInGroup?.admin === "superadmin";
 
-            const ownerNormSet = config.ownerNumbers.map(o => normalizeJid(o));
-            const ownerInGroup = metadata?.participants?.find(p => ownerNormSet.includes(normalizeJid(p.id)));
+            // 🛠 FIX (v6.3): Use LID-aware isOwnerJid instead of raw phone matching.
+            // The old code did config.ownerNumbers.map(normalizeJid) which only
+            // contained phone digits. In LID-addressed groups, participants[].id
+            // is @lid format — so the owner was NEVER found → PERMISSION DENIED.
+            const ownerInGroup = metadata?.participants?.find(p => isOwnerJid(p.id));
             const isOwnerAdminHere = ownerInGroup?.admin === "admin" || ownerInGroup?.admin === "superadmin";
 
             const isAuthorizedGroup = !!metadata && isBotAdmin && !!ownerInGroup && isOwnerAdminHere;

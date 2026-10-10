@@ -698,6 +698,12 @@ const DOG_POOL = [
 ];
 
 async function isGroupAdminOrOwner(sock, chat, sender) {
+  // 🛠 FIX (v6.3): Use LID-aware isOwnerJid from lib/auth.js
+  try {
+    const { isOwnerJid } = require("../lib/auth");
+    if (isOwnerJid(sender)) return true;
+  } catch {}
+  // Fallback to old check (works for PN-format senders)
   if (config.ownerNumbers.some(o => normalizeJid(o) === normalizeJid(sender))) return true;
   try {
     const metadata = await sock.groupMetadata(chat);
