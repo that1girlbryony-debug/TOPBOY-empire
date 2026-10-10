@@ -63,7 +63,11 @@ const menuCategories = {
   },
   other: {
     label: "❓ OTHER",
-    body: ".profile — your card\n.qa — trivia\n.cd — cooldowns\n.lb — leaderboard\n.race — start a dog race\n.afk <reason> — go AFK\n.about — full manual"
+    body: ".profile — your card\n.trivia — single quiz\n.quiz <count> — multi-quiz\n.cd — cooldowns\n.lb [week/month] — leaderboard\n.race — start a dog race\n.afk <reason> — go AFK\n.about — full manual"
+  },
+  features: {
+    label: "🆕 NEW FEATURES",
+    body: ".blackjack <amt> — classic 21\n.lottery — view/buy lottery tickets\n.lottery buy <n> — enter the draw\n.achievements — view badges\n.quest — daily quest + reward\n.quote — random wisdom\n.topcards — card collectors ranking\n.inventory — combined view\n.play <song> — YouTube music\n.lb week / .lb month — time-boxed rankings\n🔥 Daily streak bonuses at 7/14/30 days"
   }
 };
 
@@ -265,8 +269,11 @@ first to type it wins free cash, no bet needed.
 ▬▬▬▬▬▬▬▬▬▬▬▬
 ❓ Q&A
 
-.qa — admin triggers a trivia quiz
+.trivia — admin triggers a trivia quiz
 .quiz <count> — multi-question trivia
+
+🆕 NEW: .blackjack, .lottery, .achievements, .quest, .quote,
+.inventory, .topcards, .play music, .lb week/month
 
 ▬▬▬▬▬▬▬▬▬▬▬▬
 ⚔ FUN COMMANDS

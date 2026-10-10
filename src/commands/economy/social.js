@@ -40,10 +40,10 @@ const {
 const SOCIAL_COMMANDS = new Set([
   "marry", "divorce", "spouse",
   "marriageaccept", "marriagereject",
-  "slap", "kill", "yeet", "fuck", "wild", "kiss"
+  "slap", "kill", "yeet", "wild", "kiss"
 ]);
 
-const REACTION_COMMANDS = ["slap", "kill", "yeet", "fuck", "wild", "kiss"];
+const REACTION_COMMANDS = ["slap", "kill", "yeet", "wild", "kiss"];
 
 const REACTION_CAPTIONS = {
   slap: (s, t) => `👋 @${s} slapped @${t}!`,

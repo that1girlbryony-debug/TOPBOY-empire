@@ -42,7 +42,7 @@ const { isOwnerJid, isGroupAdminIn } = require("../lib/auth");
 const ADMIN_COMMANDS = new Set([
   "ban", "unban", "addbal", "tagall", "broadcast",
   "seize", "reset", "giveaway", "admin", "airdrop", "system",
-  "kick", "antilink", "cdr", "votekick", "qa", "quiz",
+  "kick", "antilink", "cdr", "votekick", "trivia", "quiz",
   "promote", "demote",
   "mute", "unmute", "lid",
   "warn", "warnings", "clearwarns",
@@ -67,6 +67,7 @@ const transactions = require("./economy/transactions");
 const games = require("./economy/games");
 const events = require("./economy/events");
 const music = require("./economy/music");
+const extras = require("./economy/extras");
 
 const MIGRATED_COMMANDS = new Map(); // command → handler module
 for (const cmd of progression.PROGRESSION_COMMANDS) MIGRATED_COMMANDS.set(cmd, progression);
@@ -80,6 +81,7 @@ for (const cmd of transactions.TRANSACTION_COMMANDS) MIGRATED_COMMANDS.set(cmd, 
 for (const cmd of games.GAME_COMMANDS) MIGRATED_COMMANDS.set(cmd, games);
 for (const cmd of events.EVENT_COMMANDS) MIGRATED_COMMANDS.set(cmd, events);
 for (const cmd of music.MUSIC_COMMANDS) MIGRATED_COMMANDS.set(cmd, music);
+for (const cmd of extras.EXTRAS_COMMANDS) MIGRATED_COMMANDS.set(cmd, extras);
 
 // ── Economy commands list (all commands — for the outer gate) ──
 const ECONOMY_COMMANDS = new Set([
@@ -88,7 +90,7 @@ const ECONOMY_COMMANDS = new Set([
   "daily", "beg", "auction", "bid", "wd", "dep", "give", "loan", "payloan",
   "rob", "send", "casino", "slots", "cf", "roulette",
   "shop", "dice", "items", "heist", "join", "protect", "claim", "col", "view",
-  "burn", "test", "tools", "accept", "reject", "kiss", "slap", "fuck", "wild", "yeet",
+  "burn", "test", "tools", "accept", "reject", "kiss", "slap", "wild", "yeet",
   "kill", "yes", "no", "roll", "buy", "sell", "bail",
   "marry", "divorce", "spouse", "marriageaccept", "marriagereject", "work",
   "trade", "fuse", "tradeaccept", "tradereject",
@@ -99,7 +101,9 @@ const ECONOMY_COMMANDS = new Set([
   "pnt", "pntjoin",
   "afk",
   // 🎵 Music
-  "play", "stop"
+  "play", "stop",
+  // 🆕 Phase 6: New features
+  "lottery", "achievements", "quest", "quote", "topcards", "inventory", "blackjack"
 ]);
 
 /**

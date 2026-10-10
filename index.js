@@ -1078,7 +1078,7 @@ Join my official group to use the bot:
                 const adminCommands = [
                     "ban", "unban", "addbal", "tagall", "broadcast",
                     "seize", "reset", "giveaway", "admin", "airdrop", "system",
-                    "kick", "antilink", "cdr", "votekick", "qa", "quiz",
+                    "kick", "antilink", "cdr", "votekick", "trivia", "quiz",
                     "promote", "demote",
                     "mute", "unmute", "lid",
                     "warn", "warnings", "clearwarns",
@@ -1129,7 +1129,7 @@ Join my official group to use the bot:
                     "profile", "bal", "assets", "lb", "richest", "cd",
                     "daily", "beg", "auction", "bid", "wd", "dep", "give", "loan", "payloan",
                     "rob", "send", "casino", "slots", "cf", "roulette",
-                    "shop", "dice", "items", "heist", "join", "protect", "claim", "col", "view", "burn", "test", "tools", "accept", "reject", "kiss", "slap", "fuck", "wild", "yeet", "kill", "yes", "no",
+                    "shop", "dice", "items", "heist", "join", "protect", "claim", "col", "view", "burn", "test", "tools", "accept", "reject", "kiss", "slap", "wild", "yeet", "kill", "yes", "no",
                     "roll", "buy", "sell", "bail",
                     "marry", "divorce", "spouse", "marriageaccept", "marriagereject", "work", "trade", "fuse", "tradeaccept", "tradereject",
                     "debug",
@@ -1139,7 +1139,9 @@ Join my official group to use the bot:
                     "pnt", "pntjoin",
                     "afk",
                     // 🎵 Music
-                    "play", "stop"
+                    "play", "stop",
+                    // 🆕 Phase 6: New features
+                    "lottery", "achievements", "quest", "quote", "topcards", "inventory", "blackjack"
                 ];
 
                 if (economyCommands.includes(command)) {

@@ -642,7 +642,7 @@ Started by: @${cleanId(sender)}
         // ===============================
         // 🧠 TRIVIA QUIZ (Admin-triggered, pings group)
         // ===============================
-        case "qa": {
+        case "trivia": {
             if (!isGroup) return reply("🚫 Group only.");
 
             // 🆕 Only the bot owner can spam quiz freely. Other group
