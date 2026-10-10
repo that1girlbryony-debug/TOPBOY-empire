@@ -1,10 +1,10 @@
 // 🛠 Phase 2 / 2.5: relocated from commands/admin.js to src/commands/admin/index.js
 // Require paths updated to reflect new location (one extra ../).
 const User = require("../../models/User");
-const config = require("../../config");
+const config = require("../../../config");
 const animeCards = require("../../data/animeCards");
 const axios = require("axios");
-const { formatMoney, cleanId, normalizeJid } = require("../../utils/helpers");
+const { formatMoney, cleanId, normalizeJid } = require("../../../utils/helpers");
 // 🆕 v6.2: Use LID-aware auth from src/lib/auth.js
 const { isOwnerJid: isOwnerJidLib, isGroupAdminIn: isGroupAdminInLib, isBotAdminIn: isBotAdminInLib } = require("../../lib/auth");
 
