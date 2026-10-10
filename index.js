@@ -25,7 +25,7 @@ const { normalizeJid } = require("./utils/helpers");
 
 // 🆕 v6.2: LID normalization — replaces the old local isOwnerJid
 const authLib = require("./src/lib/auth");
-const { isOwnerJid, isOwnerJidAsync, cacheLidMapping, setSocket } = authLib;
+const { isOwnerJid, isOwnerJidAsync, cacheLidMapping, setSocket, resolveOwnerLids } = authLib;
 
 // 🆕 v2.0 — Quick Draw is now merged into economy.js (along with the
 // hacker event and X-and-O logic), so we grab its answer-checker off
@@ -283,6 +283,17 @@ async function startBot() {
                 // 🆕 v6.2: Give auth.js access to the socket for LID resolution
                 setSocket(sock);
                 console.log("🔐 LID normalization engine active (phone → LID auto-resolve)");
+
+                // 🆕 v6.2: PROACTIVELY resolve owner phone numbers to LIDs.
+                // Without this, the cache is empty on boot and isOwnerJid()
+                // can't match @lid sender JIDs against plain phone numbers.
+                // This makes a network call per owner number (cached by Baileys after first resolve).
+                resolveOwnerLids(sock).then(() => {
+                    const stats = authLib._cacheStats();
+                    console.log(`🔐 Owner LID resolution complete — cache: ${stats.lidToPn} LID→PN, ${stats.pnToLid} PN→LID`);
+                }).catch(err => {
+                    console.warn("⚠️ Owner LID resolution failed:", err.message);
+                });
 
                 // 🆕 v6.2: Register lid-mapping.update listener to warm the
                 // PN↔LID cache. This fires whenever WhatsApp pushes new

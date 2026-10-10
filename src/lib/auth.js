@@ -9,16 +9,18 @@
  * How it works:
  *   1. At boot, index.js calls setSocket(sock) to give us access
  *      to Baileys' lidMapping API.
- *   2. index.js registers sock.ev.on("lid-mapping.update") which
- *      warms our local cache (phone ↔ lid pairs).
- *   3. On the first connection, Baileys also loads persisted mappings
- *      from its auth keys, so the cache is hot within seconds.
+ *   2. index.js calls resolveOwnerLids(sock) which PROACTIVELY
+ *      resolves each owner phone number to its LID via the
+ *      lidMapping API and caches the result. This ensures the
+ *      cache is hot before any messages arrive.
+ *   3. index.js registers sock.ev.on("lid-mapping.update") which
+ *      keeps the cache warm with new mappings.
  *   4. isOwnerJid(jid) stays SYNC — it checks:
  *        a) Does jid's phone digits match any owner phone digits? → ✅
  *        b) Does jid's LID appear in our lid→phone cache, and does
  *           that phone match an owner phone? → ✅
- *        c) Cache miss → digit-strip fallback (works when both sides
- *           are same format, which covers most cases)
+ *        c) Fallback: try resolving on the fly if socket is available
+ *           (still sync — uses cached results from resolveOwnerLids)
  *   5. For high-stakes async paths, isOwnerJidAsync(jid) calls
  *      sock.signalRepository.lidMapping.getPNForLID() on cache miss.
  */
@@ -57,6 +59,53 @@ function cacheLidMapping(mapping) {
   if (pnDigits && lidDigits) {
     _lidToPnCache.set(lidDigits, pnDigits);
     _pnToLidCache.set(pnDigits, lidDigits);
+  }
+}
+
+/**
+ * PROACTIVELY resolve all owner phone numbers to LIDs.
+ *
+ * This is the KEY fix — without this, the cache starts empty on boot.
+ * If the group is LID-addressed, the owner's sender JID will be @lid
+ * format, and isOwnerJid() can't match it against the plain phone
+ * number in config because the cache hasn't been warmed yet.
+ *
+ * Called once after bot connects. Uses Baileys' lidMapping API to
+ * resolve each owner phone → LID, then caches the result.
+ *
+ * @param {Object} sock — Baileys socket
+ */
+async function resolveOwnerLids(sock) {
+  if (!sock?.signalRepository?.lidMapping) {
+    console.warn("⚠️ [auth] lidMapping API not available — owner LID resolution skipped");
+    return;
+  }
+
+  for (const ownerNum of config.ownerNumbers) {
+    const phoneDigits = ownerNum.replace(/[^0-9]/g, "");
+    if (!phoneDigits) continue;
+
+    // Already cached?
+    if (_pnToLidCache.has(phoneDigits)) {
+      console.log(`🔐 Owner ${phoneDigits} → LID already cached: ${_pnToLidCache.get(phoneDigits)}`);
+      continue;
+    }
+
+    try {
+      const pnJid = `${phoneDigits}@s.whatsapp.net`;
+      const lid = await sock.signalRepository.lidMapping.getLIDForPN(pnJid);
+
+      if (lid) {
+        const lidDigits = lid.replace(/[^0-9]/g, "");
+        _pnToLidCache.set(phoneDigits, lidDigits);
+        _lidToPnCache.set(lidDigits, phoneDigits);
+        console.log(`🔐 Owner ${phoneDigits} → LID resolved: ${lidDigits}`);
+      } else {
+        console.warn(`⚠️ [auth] Could not resolve LID for owner ${phoneDigits} (user may not be on WhatsApp)`);
+      }
+    } catch (err) {
+      console.warn(`⚠️ [auth] LID resolution failed for owner ${phoneDigits}: ${err.message}`);
+    }
   }
 }
 
@@ -261,6 +310,7 @@ module.exports = {
   isGroupAdminOrOwner,
   setSocket,
   cacheLidMapping,
+  resolveOwnerLids,
   // Export cache stats for debugging
   _cacheStats: () => ({ lidToPn: _lidToPnCache.size, pnToLid: _pnToLidCache.size }),
 };
